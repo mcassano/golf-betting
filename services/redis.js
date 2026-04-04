@@ -12,6 +12,17 @@ export const set = (key, value) => redis.set(key, String(value));
 export const del = (...keys) => redis.del(...keys);
 export const keys = (pattern) => redis.keys(pattern);
 
+// Simple Redis lock using SET NX EX
+export async function withLock(lockKey, ttlMs, fn) {
+  const acquired = await redis.set(lockKey, '1', 'PX', ttlMs, 'NX');
+  if (!acquired) throw new Error('Action in progress, try again');
+  try {
+    return await fn();
+  } finally {
+    await redis.del(lockKey);
+  }
+}
+
 export const getJSON = async (key) => {
   const val = await redis.get(key);
   return val ? JSON.parse(val) : null;

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, set, getJSON, setJSON, keys, del } from '../services/redis.js';
+import { get, set, getJSON, setJSON, keys, del, withLock } from '../services/redis.js';
 import { shuffle, buildPickOrder, getCurrentPlayer, buildTeams } from '../services/draft.js';
 import { computeLeaderboard } from '../services/betting.js';
 import { encodeKey } from '../services/scoring.js';
@@ -177,48 +177,54 @@ router.post('/draft/pick', requireUser, requireStatus('drafting'), async (req, r
   const { golfer } = req.body;
   if (!golfer) return res.status(400).json({ error: 'golfer required' });
 
-  const draftOrder = await getJSON('draft:order');
-  const picks = await getJSON('draft:picks') || [];
-  const currentPickIndex = parseInt(await get('draft:currentPick') || '0', 10);
-  const pickOrder = buildPickOrder(draftOrder);
-  const currentPlayer = pickOrder[currentPickIndex];
+  try {
+    await withLock('lock:draft:pick', 5000, async () => {
+      const draftOrder = await getJSON('draft:order');
+      const picks = await getJSON('draft:picks') || [];
+      const currentPickIndex = parseInt(await get('draft:currentPick') || '0', 10);
+      const pickOrder = buildPickOrder(draftOrder);
+      const currentPlayer = pickOrder[currentPickIndex];
 
-  if (player !== currentPlayer) {
-    return res.status(403).json({ error: 'Not your turn' });
+      if (player !== currentPlayer) {
+        throw Object.assign(new Error('Not your turn'), { status: 403 });
+      }
+
+      const allGolfers = await getJSON('tournament:players') || [];
+      if (!allGolfers.find((g) => g.name === golfer)) {
+        throw Object.assign(new Error('Unknown golfer'), { status: 400 });
+      }
+      if (picks.find((p) => p.golfer === golfer)) {
+        throw Object.assign(new Error('Already picked'), { status: 400 });
+      }
+
+      picks.push({ player, golfer, pickNumber: currentPickIndex });
+      const nextPickIndex = currentPickIndex + 1;
+      await setJSON('draft:picks', picks);
+      await set('draft:currentPick', String(nextPickIndex));
+
+      const users = await getJSON('users');
+
+      if (nextPickIndex >= pickOrder.length) {
+        const teams = buildTeams(picks, users);
+        for (const [p, golfers] of Object.entries(teams)) {
+          await setJSON(`teams:${p}`, golfers);
+        }
+        const meta = req.tournamentMeta;
+        meta.status = 'wc_selection';
+        await setJSON('tournament:meta', meta);
+        emit('draft:complete', { teams });
+      } else {
+        const nextPlayer = pickOrder[nextPickIndex];
+        const pickedGolfers = picks.map((p) => p.golfer);
+        const availableGolfers = allGolfers.filter((g) => !pickedGolfers.includes(g.name));
+        emit('draft:pick', { picks, currentPick: nextPickIndex, currentPlayer: nextPlayer, availableGolfers });
+      }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    const status = e.status || 409;
+    res.status(status).json({ error: e.message });
   }
-
-  const allGolfers = await getJSON('tournament:players') || [];
-  if (!allGolfers.find((g) => g.name === golfer)) {
-    return res.status(400).json({ error: 'Unknown golfer' });
-  }
-  if (picks.find((p) => p.golfer === golfer)) {
-    return res.status(400).json({ error: 'Already picked' });
-  }
-
-  picks.push({ player, golfer, pickNumber: currentPickIndex });
-  const nextPickIndex = currentPickIndex + 1;
-  await setJSON('draft:picks', picks);
-  await set('draft:currentPick', String(nextPickIndex));
-
-  const users = await getJSON('users');
-
-  if (nextPickIndex >= pickOrder.length) {
-    const teams = buildTeams(picks, users);
-    for (const [p, golfers] of Object.entries(teams)) {
-      await setJSON(`teams:${p}`, golfers);
-    }
-    const meta = req.tournamentMeta;
-    meta.status = 'wc_selection';
-    await setJSON('tournament:meta', meta);
-    emit('draft:complete', { teams });
-  } else {
-    const nextPlayer = pickOrder[nextPickIndex];
-    const pickedGolfers = picks.map((p) => p.golfer);
-    const availableGolfers = allGolfers.filter((g) => !pickedGolfers.includes(g.name));
-    emit('draft:pick', { picks, currentPick: nextPickIndex, currentPlayer: nextPlayer, availableGolfers });
-  }
-
-  res.json({ ok: true });
 });
 
 // ── Teams ─────────────────────────────────────────────────────────────────────

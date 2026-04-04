@@ -418,12 +418,18 @@ window.filterGolfers = function() {
 };
 
 window.pickGolfer = async function(golfer) {
+  // Disable all pick buttons immediately to prevent double-taps
+  document.querySelectorAll('#golfer-list .golfer-item').forEach((item) => {
+    item.classList.add('disabled');
+    item.style.pointerEvents = 'none';
+  });
   try {
     await api('POST', '/draft/pick', { golfer });
   } catch (e) {
     showToast(e.message, 'error');
-    navigate('draft');
   }
+  // Always refresh to get the true server state
+  navigate('draft');
 };
 
 // ── View: My Team ─────────────────────────────────────────────────────────────
@@ -750,6 +756,15 @@ function setupSocket() {
   if (socket) socket.disconnect();
   socket = io();
 
+  socket.on('connect', () => {
+    // On reconnect (not first connect), refresh the current view to catch missed events
+    if (state._socketConnectedBefore) {
+      state.tournament = null;
+      refreshCurrentView();
+    }
+    state._socketConnectedBefore = true;
+  });
+
   socket.on('draft:started', async () => {
     state.tournament = await api('GET', '/tournament');
     showToast('Draft has started!', 'info');
@@ -780,6 +795,28 @@ function setupSocket() {
   socket.on('scores:updated', () => {
     if (state.view === 'leaderboard' || state.view === 'scoreboard') navigate(state.view);
   });
+}
+
+// Refresh view when phone wakes up / tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.user) {
+    refreshCurrentView();
+  }
+});
+
+async function refreshCurrentView() {
+  try {
+    state.tournament = await api('GET', '/tournament');
+    const correctView = routeFromStatus(state.tournament?.status);
+    // If the tournament status moved past the current view, redirect
+    if (state.view === 'draft' && correctView !== 'draft') {
+      navigate(correctView);
+    } else {
+      navigate(state.view);
+    }
+  } catch {
+    // ignore — offline or server down
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
