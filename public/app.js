@@ -41,6 +41,7 @@ function navigate(view) {
   state.view = view;
   renderApp();
 }
+window.navigate = navigate;
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
@@ -93,11 +94,17 @@ function renderLogin(container) {
     </div>`;
 
   api('GET', '/users').then((users) => {
+    if (!users || users.length === 0) {
+      el('user-buttons').innerHTML = '<div class="text-center text-red-500 text-sm">No users found. Check server logs.</div>';
+      return;
+    }
     el('user-buttons').innerHTML = users.map((u) => `
       <button onclick="login('${u}')"
         class="btn btn-primary w-full py-3 text-base">
         ${u}
       </button>`).join('');
+  }).catch((err) => {
+    el('user-buttons').innerHTML = `<div class="text-center text-red-500 text-sm">Error: ${err.message}</div>`;
   });
 }
 
