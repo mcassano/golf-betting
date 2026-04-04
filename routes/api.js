@@ -153,8 +153,9 @@ router.get('/draft/state', async (req, res) => {
 router.post('/admin/draft/start', requireUser, requireStatus('setup'), async (req, res) => {
   const users = await getJSON('users');
   const players = await getJSON('tournament:players');
-  if (!players || players.length < 18) {
-    return res.status(400).json({ error: 'Need at least 18 golfers in the player list' });
+  const minPlayers = users.length * 6;
+  if (!players || players.length < minPlayers) {
+    return res.status(400).json({ error: `Need at least ${minPlayers} golfers in the player list` });
   }
   const draftOrder = shuffle(users);
   const pickOrder = buildPickOrder(draftOrder);
@@ -201,7 +202,7 @@ router.post('/draft/pick', requireUser, requireStatus('drafting'), async (req, r
 
   const users = await getJSON('users');
 
-  if (nextPickIndex >= 18) {
+  if (nextPickIndex >= pickOrder.length) {
     const teams = buildTeams(picks, users);
     for (const [p, golfers] of Object.entries(teams)) {
       await setJSON(`teams:${p}`, golfers);

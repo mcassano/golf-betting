@@ -280,7 +280,7 @@ window.saveScoreCell = async function(input) {
   const day = parseInt(input.dataset.day, 10);
   const raw = input.value.trim().toUpperCase();
   if (!raw) return;
-  const score = (raw === 'CUT' || raw === 'WD') ? raw : raw;
+  const score = raw;
   try {
     await api('POST', '/admin/scores', { golfer, day, score });
     input.value = score;
@@ -335,9 +335,11 @@ async function renderDraft(container) {
   if (isDraftDone) {
     html += `<div class="alert alert-success">Draft is complete! <button onclick="navigate('myTeam')" class="underline ml-1">View your team →</button></div>`;
   } else if (isMyTurn) {
-    html += `<div class="your-turn-banner mb-4">🏌️ It's your turn to pick! (Pick ${currentPick + 1} of 18)</div>`;
+    const totalPicks = order.length * 6;
+    html += `<div class="your-turn-banner mb-4">🏌️ It's your turn to pick! (Pick ${currentPick + 1} of ${totalPicks})</div>`;
   } else {
-    html += `<div class="alert alert-info mb-4">Waiting for <strong>${currentPlayer}</strong> to pick… (Pick ${currentPick + 1} of 18)</div>`;
+    const totalPicks = order.length * 6;
+    html += `<div class="alert alert-info mb-4">Waiting for <strong>${currentPlayer}</strong> to pick… (Pick ${currentPick + 1} of ${totalPicks})</div>`;
   }
 
   // Draft order display
@@ -382,7 +384,7 @@ async function renderDraft(container) {
   // Picks so far
   html += `
   <div class="card">
-    <div class="section-title">Picks So Far (${picks.length}/18)</div>
+    <div class="section-title">Picks So Far (${picks.length}/${order ? order.length * 6 : '?'})</div>
     <div class="max-h-96 overflow-y-auto">
       ${picks.length === 0 ? '<p class="text-gray-400 text-sm">No picks yet.</p>' : ''}
       ${picks.map((p, i) => `
@@ -609,7 +611,7 @@ function renderBetCard(label, bet, users) {
           return `<tr>
             <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner text-xs">you</span>' : ''}</td>
             <td>${score === null ? '<span class="text-gray-400">—</span>' : score}</td>
-            <td>${won ? '<span class="badge badge-winner">WIN +$10</span>' : bet.type === 'two_way_tie' && isWinner(u) ? '<span class="badge badge-winner">TIE</span>' : '<span class="text-gray-400 text-xs">-$5</span>'}</td>
+            <td>${won && bet.type === 'winner' ? '<span class="badge badge-winner">WIN +$10</span>' : won && bet.type === 'two_way_tie' ? '<span class="badge badge-winner">TIE +$5</span>' : won ? '<span class="badge badge-winner">WIN</span>' : '<span class="text-gray-400 text-xs">-$5</span>'}</td>
           </tr>`;
         }).join('')}
       </tbody>
