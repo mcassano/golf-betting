@@ -176,9 +176,11 @@ async function renderAdmin(container) {
 
   // ── Score Entry (when tournament is in progress)
   if (status && !['setup', 'drafting', 'wc_selection'].includes(status)) {
-    const [players, scores] = await Promise.all([api('GET', '/players'), api('GET', '/scores')]);
+    const [players, scores, teams, wcData] = await Promise.all([api('GET', '/players'), api('GET', '/scores'), api('GET', '/teams'), api('GET', '/wc')]);
+    const draftedNames = new Set([...Object.values(teams).flat(), ...Object.values(wcData).filter(Boolean)]);
+    const draftedPlayers = players.filter((p) => draftedNames.has(p.name));
     const currentDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 }[status] || 1;
-    const rows = players.map((p) => {
+    const rows = draftedPlayers.map((p) => {
       const s = scores[p.name] || {};
       const cells = [1, 2, 3, 4].map((d) => {
         const val = s[`day${d}`] || '';
@@ -290,12 +292,13 @@ window.saveScoreCell = async function(input) {
 };
 
 window.scoreGridKeydown = function(e, input) {
-  if (e.key === 'Enter') {
+  if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
-    // Move down to the same day column on the next row
     const allInputs = Array.from(document.querySelectorAll('.score-cell'));
     const idx = allInputs.indexOf(input);
-    const next = allInputs[idx + 4]; // 4 days per row
+    const cols = 4;
+    const dir = e.shiftKey ? -cols : cols;
+    const next = allInputs[idx + dir];
     if (next) next.focus();
     else input.blur();
   }
