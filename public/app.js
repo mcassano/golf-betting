@@ -257,7 +257,8 @@ window.savePlayers = async function() {
   const raw = el('player-list').value;
   const names = raw.split('\n').map((s) => s.trim()).filter(Boolean);
   if (names.length === 0) return;
-  const players = names.map((name) => ({ name, wcEligible: false }));
+  const cutoff = Math.floor(names.length / 2);
+  const players = names.map((name, i) => ({ name, wcEligible: i >= cutoff }));
   await api('POST', '/admin/players', { players });
   showToast(`Saved ${players.length} players`, 'success');
   navigate('admin');
