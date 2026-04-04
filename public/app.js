@@ -176,36 +176,44 @@ async function renderAdmin(container) {
 
   // ── Score Entry (when tournament is in progress)
   if (status && !['setup', 'drafting', 'wc_selection'].includes(status)) {
-    const players = await api('GET', '/players');
+    const [players, scores] = await Promise.all([api('GET', '/players'), api('GET', '/scores')]);
     const currentDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 }[status] || 1;
+    const rows = players.map((p) => {
+      const s = scores[p.name] || {};
+      const cells = [1, 2, 3, 4].map((d) => {
+        const val = s[`day${d}`] || '';
+        const isActive = d === currentDay;
+        return `<td class="p-1">
+          <input
+            type="text"
+            data-golfer="${p.name.replace(/"/g, '&quot;')}"
+            data-day="${d}"
+            value="${val}"
+            placeholder="${isActive ? '—' : ''}"
+            onblur="saveScoreCell(this)"
+            onkeydown="scoreGridKeydown(event, this)"
+            class="score-cell w-16 text-center border rounded px-1 py-0.5 text-sm font-mono ${isActive ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'} ${val === 'CUT' || val === 'WD' ? 'text-red-500' : ''}"
+          />
+        </td>`;
+      }).join('');
+      return `<tr class="border-b border-gray-50">
+        <td class="py-1 pr-3 text-sm font-medium text-gray-700 whitespace-nowrap">${p.name}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
     html += `
     <div class="card mb-4">
-      <div class="section-title">Score Entry</div>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Golfer</label>
-          <select id="score-golfer">
-            <option value="">-- Select golfer --</option>
-            ${players.map((p) => `<option value="${p.name}">${p.name}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Day</label>
-          <select id="score-day">
-            ${[1,2,3,4].map((d) => `<option value="${d}" ${d === currentDay ? 'selected' : ''}>Day ${d}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Score</label>
-          <input type="number" id="score-value" placeholder="72" min="50" max="100" />
-        </div>
-        <div class="flex flex-col justify-end gap-1">
-          <button onclick="saveScore()" class="btn btn-primary">Save Score</button>
-          <div class="flex gap-1">
-            <button onclick="saveSpecialScore('CUT')" class="btn btn-secondary btn-sm flex-1">CUT</button>
-            <button onclick="saveSpecialScore('WD')" class="btn btn-secondary btn-sm flex-1">WD</button>
-          </div>
-        </div>
+      <div class="section-title">Score Entry <span class="text-xs font-normal text-gray-400 ml-2">Tab through cells · type number, CUT, or WD · saves on leave</span></div>
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200">
+              <th class="py-1 pr-3 font-medium">Golfer</th>
+              ${[['Thu',1],['Fri',2],['Sat',3],['Sun',4]].map(([label,d]) => `<th class="py-1 px-1 font-medium text-center ${d === currentDay ? 'text-green-700' : ''}">${label}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>
     </div>`;
   }
@@ -264,21 +272,33 @@ window.startDraft = async function() {
   navigate('draft');
 };
 
-window.saveScore = async function() {
-  const golfer = el('score-golfer').value;
-  const day = el('score-day').value;
-  const score = el('score-value').value;
-  if (!golfer || !score) return showToast('Select golfer and enter score', 'warning');
-  await api('POST', '/admin/scores', { golfer, day: parseInt(day), score });
-  showToast(`Score saved for ${golfer}`, 'success');
+window.saveScoreCell = async function(input) {
+  const golfer = input.dataset.golfer;
+  const day = parseInt(input.dataset.day, 10);
+  const raw = input.value.trim().toUpperCase();
+  if (!raw) return;
+  const score = (raw === 'CUT' || raw === 'WD') ? raw : raw;
+  try {
+    await api('POST', '/admin/scores', { golfer, day, score });
+    input.value = score;
+    input.classList.toggle('text-red-500', score === 'CUT' || score === 'WD');
+    input.classList.remove('border-red-400', 'bg-red-50');
+  } catch (e) {
+    input.classList.add('border-red-400', 'bg-red-50');
+    showToast(`Error saving ${golfer} day ${day}: ${e.message}`, 'error');
+  }
 };
 
-window.saveSpecialScore = async function(score) {
-  const golfer = el('score-golfer').value;
-  const day = el('score-day').value;
-  if (!golfer) return showToast('Select a golfer first', 'warning');
-  await api('POST', '/admin/scores', { golfer, day: parseInt(day), score });
-  showToast(`${golfer}: ${score}`, 'success');
+window.scoreGridKeydown = function(e, input) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    // Move down to the same day column on the next row
+    const allInputs = Array.from(document.querySelectorAll('.score-cell'));
+    const idx = allInputs.indexOf(input);
+    const next = allInputs[idx + 4]; // 4 days per row
+    if (next) next.focus();
+    else input.blur();
+  }
 };
 
 window.advanceTournament = async function(status) {
