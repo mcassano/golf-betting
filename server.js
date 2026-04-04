@@ -31,7 +31,7 @@ async function seedUsers() {
   if (!existing) {
     const names = process.env.GOLF_USERS
       ? process.env.GOLF_USERS.split(',').map((s) => s.trim())
-      : ['Mike', 'Dave', 'Tom'];
+      : ['Mike', 'Caleb', 'Marshall'];
     await setJSON('users', names);
     console.log('Seeded users:', names);
   }
