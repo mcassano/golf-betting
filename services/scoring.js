@@ -2,9 +2,14 @@ import { get, getJSON } from './redis.js';
 
 const PENALTY = 80;
 
+export function isWD(raw) {
+  return raw === 'WD';
+}
+
 export function resolveScore(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
-  if (raw === 'CUT' || raw === 'WD') return PENALTY;
+  if (raw === 'WD') return null;
+  if (raw === 'CUT') return PENALTY;
   const n = parseInt(raw, 10);
   return isNaN(n) ? PENALTY : n;
 }
