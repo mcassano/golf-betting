@@ -4,6 +4,8 @@ import {
   teamScoreBest2ForDay,
   teamOverallScore,
   allGolfersCumulative,
+  countMaxWDs,
+  encodeKey,
 } from './scoring.js';
 
 export function determineBetWinner(scores) {
@@ -46,16 +48,40 @@ export async function computeLeaderboard(users, meta) {
 
   for (const { key, n, useAll6, minStatusIdx } of dayDefs) {
     if (currentIdx < minStatusIdx) continue;
-    const scores = {};
-    let anyPartial = false;
-    for (const user of users) {
-      const res = useAll6
-        ? await teamScoreForDay(user, n)
-        : await teamScoreBest2ForDay(user, n);
-      scores[user] = res.partial ? null : res.total;
-      if (res.partial) anyPartial = true;
+
+    if (useAll6) {
+      // Days 1 & 2: compute bestN based on max WDs across all teams
+      const teamRawScores = {};
+      for (const user of users) {
+        const golfers = await getJSON(`teams:${user}`) || [];
+        const rawScores = [];
+        for (const golfer of golfers) {
+          rawScores.push(await get(`scores:${encodeKey(golfer)}:day${n}`));
+        }
+        teamRawScores[user] = rawScores;
+      }
+      const maxWDs = countMaxWDs(teamRawScores);
+      const bestN = 6 - maxWDs;
+
+      const scores = {};
+      let anyPartial = false;
+      for (const user of users) {
+        const res = await teamScoreForDay(user, n, bestN);
+        scores[user] = res.partial ? null : res.total;
+        if (res.partial) anyPartial = true;
+      }
+      result[key] = { scores, partial: anyPartial, bestN, ...determineBetWinner(scores) };
+    } else {
+      // Days 3 & 4: best 2, unchanged
+      const scores = {};
+      let anyPartial = false;
+      for (const user of users) {
+        const res = await teamScoreBest2ForDay(user, n);
+        scores[user] = res.partial ? null : res.total;
+        if (res.partial) anyPartial = true;
+      }
+      result[key] = { scores, partial: anyPartial, ...determineBetWinner(scores) };
     }
-    result[key] = { scores, partial: anyPartial, ...determineBetWinner(scores) };
   }
 
   // Overall available once day3 has started (meaningful after day 4, but show early)

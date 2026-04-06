@@ -105,6 +105,17 @@ export async function allGolfersCumulative() {
   return result;
 }
 
+// Count the max number of WD golfers on any single team.
+// teams: { userName: [rawScore1, rawScore2, ...], ... }
+export function countMaxWDs(teams) {
+  let max = 0;
+  for (const rawScores of Object.values(teams)) {
+    const wds = rawScores.filter((raw) => isWD(raw)).length;
+    if (wds > max) max = wds;
+  }
+  return max;
+}
+
 // Encode golfer name for use as Redis key part (replace spaces/special chars)
 export function encodeKey(name) {
   return name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '');
