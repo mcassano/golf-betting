@@ -3,6 +3,8 @@ import { get, set, getJSON, setJSON, keys, del, withLock } from '../services/red
 import { shuffle, buildPickOrder, getCurrentPlayer, buildTeams } from '../services/draft.js';
 import { computeLeaderboard } from '../services/betting.js';
 import { encodeKey } from '../services/scoring.js';
+import { syncScores, syncPlayers } from '../services/espn-sync.js';
+import { startPolling, stopPolling, getPollingStatus } from '../services/espn-poller.js';
 
 const router = Router();
 
@@ -363,6 +365,56 @@ router.get('/leaderboard', async (req, res) => {
   const meta = await getJSON('tournament:meta');
   const leaderboard = await computeLeaderboard(users, meta);
   res.json(leaderboard);
+});
+
+// ── ESPN Integration ─────────────────────────────────────────────────────────
+
+router.post('/admin/espn/sync-players', requireUser, async (req, res) => {
+  try {
+    const result = await syncPlayers();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[ESPN] Player sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/admin/espn/sync-scores', requireUser, async (req, res) => {
+  try {
+    const result = await syncScores(_io);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[ESPN] Score sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/admin/espn/start-polling', requireUser, async (req, res) => {
+  const started = startPolling(_io);
+  if (started) {
+    res.json({ ok: true, message: 'Polling started' });
+  } else {
+    res.json({ ok: false, message: 'Already polling' });
+  }
+});
+
+router.post('/admin/espn/stop-polling', requireUser, async (req, res) => {
+  const stopped = stopPolling();
+  if (stopped) {
+    res.json({ ok: true, message: 'Polling stopped' });
+  } else {
+    res.json({ ok: false, message: 'Not currently polling' });
+  }
+});
+
+router.get('/admin/espn/status', requireUser, async (req, res) => {
+  const status = getPollingStatus();
+  const meta = await getJSON('tournament:meta');
+  res.json({
+    ...status,
+    lastEspnSync: meta?.lastEspnSync || null,
+    espnEventId: meta?.espnEventId || null,
+  });
 });
 
 export default router;
