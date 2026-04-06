@@ -321,6 +321,26 @@ router.post('/admin/scores', requireUser, async (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/admin/scores/wd', requireUser, async (req, res) => {
+  const { golfer, fromDay } = req.body;
+  if (!golfer) return res.status(400).json({ error: 'golfer required' });
+
+  // Default fromDay to current tournament day
+  let dayStart = parseInt(fromDay, 10);
+  if (!dayStart || dayStart < 1 || dayStart > 4) {
+    const meta = await getJSON('tournament:meta');
+    const statusDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 };
+    dayStart = statusDay[meta?.status] || 1;
+  }
+
+  const key = encodeKey(golfer);
+  for (let d = dayStart; d <= 4; d++) {
+    await set(`scores:${key}:day${d}`, 'WD');
+  }
+  emit('scores:updated', { golfer, wd: true, fromDay: dayStart });
+  res.json({ ok: true, fromDay: dayStart, throughDay: 4 });
+});
+
 // Bulk score entry (paste a whole day's scores at once)
 router.post('/admin/scores/bulk', requireUser, async (req, res) => {
   // body: { day: 1, scores: [{golfer, score}, ...] }
