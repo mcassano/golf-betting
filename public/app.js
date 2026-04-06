@@ -198,8 +198,12 @@ async function renderAdmin(container) {
           />
         </td>`;
       }).join('');
+      const alreadyWD = s[`day${currentDay}`] === 'WD';
       return `<tr class="border-b border-gray-50">
-        <td class="py-1 pr-3 text-sm font-medium text-gray-700 whitespace-nowrap">${p.name}</td>
+        <td class="py-1 pr-3 text-sm font-medium text-gray-700 whitespace-nowrap">
+          ${p.name}
+          ${alreadyWD ? '' : `<button onclick="markAsWD('${p.name.replace(/'/g, "\\'")}', ${currentDay})" class="ml-2 text-xs text-red-400 hover:text-red-600 hover:underline font-normal">WD</button>`}
+        </td>
         ${cells}
       </tr>`;
     }).join('');
@@ -289,6 +293,17 @@ window.saveScoreCell = async function(input) {
   } catch (e) {
     input.classList.add('border-red-400', 'bg-red-50');
     showToast(`Error saving ${golfer} day ${day}: ${e.message}`, 'error');
+  }
+};
+
+window.markAsWD = async function(golfer, fromDay) {
+  if (!confirm(`Mark ${golfer} as WD from Day ${fromDay} onward?`)) return;
+  try {
+    await api('POST', '/admin/scores/wd', { golfer, fromDay });
+    showToast(`${golfer} marked as WD`, 'success');
+    navigate('admin');
+  } catch (e) {
+    showToast(`Error: ${e.message}`, 'error');
   }
 };
 
