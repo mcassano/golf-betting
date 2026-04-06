@@ -14,19 +14,37 @@ export function resolveScore(raw) {
   return isNaN(n) ? PENALTY : n;
 }
 
-// Day 1 & 2: sum of all 6 golfers
-export async function teamScoreForDay(player, dayN) {
+// Pure scoring: given array of raw score strings, compute best-N total excluding WDs.
+export function bestNScore(rawScores, bestN) {
+  const scores = [];
+  let partial = false;
+
+  for (const raw of rawScores) {
+    if (isWD(raw)) continue;
+    const score = resolveScore(raw);
+    if (score === null) {
+      partial = true;
+    } else {
+      scores.push(score);
+    }
+  }
+
+  scores.sort((a, b) => a - b);
+  const take = Math.min(bestN, scores.length);
+  const total = scores.slice(0, take).reduce((sum, s) => sum + s, 0);
+
+  return { total, partial };
+}
+
+// Day 1 & 2: best N golfers (N defaults to 6, reduced when WDs exist)
+export async function teamScoreForDay(player, dayN, bestN = 6) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
-  let total = 0;
-  let partial = false;
+  const rawScores = [];
   for (const golfer of golfers) {
-    const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
-    const score = resolveScore(raw);
-    if (score === null) { partial = true; total += 0; }
-    else total += score;
+    rawScores.push(await get(`scores:${encodeKey(golfer)}:day${dayN}`));
   }
-  return { total, partial };
+  return bestNScore(rawScores, bestN);
 }
 
 // Day 3 & 4: sum of best 2 golfers that day
