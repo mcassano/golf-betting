@@ -1,4 +1,5 @@
-import { getJSON } from './redis.js';
+import { get, getJSON } from './redis.js';
+import { encodeKey } from './scoring.js';
 import { syncScores } from './espn-sync.js';
 
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -31,9 +32,25 @@ async function poll(io) {
     const result = await syncScores(io);
     lastPollTime = new Date().toISOString();
     console.log(`[ESPN Poller] Poll complete: ${result.updated} scores updated`);
+
+    // Auto-stop once every player has a day4 score recorded (including CUT/WD).
+    if (await tournamentComplete()) {
+      console.log('[ESPN Poller] All day4 scores recorded, auto-stopping');
+      stopPolling();
+    }
   } catch (err) {
     console.error('[ESPN Poller] Poll error:', err.message);
   }
+}
+
+async function tournamentComplete() {
+  const players = await getJSON('tournament:players') || [];
+  if (!players.length) return false;
+  for (const p of players) {
+    const v = await get(`scores:${encodeKey(p.name)}:day4`);
+    if (v === null || v === undefined) return false;
+  }
+  return true;
 }
 
 /**
@@ -49,7 +66,7 @@ export function startPolling(io) {
   console.log('[ESPN Poller] Starting polling (every 30 minutes)');
 
   // Do an immediate poll, then set interval
-  poll(io);
+  poll(io).catch((err) => console.error('[ESPN Poller] Initial poll error:', err));
   pollTimer = setInterval(() => poll(io), POLL_INTERVAL_MS);
 
   return true;
