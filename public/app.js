@@ -112,47 +112,79 @@ function renderApp() {
 
 function renderLogin(container) {
   container.innerHTML = `
-    <div class="min-h-[60vh] flex flex-col items-center justify-center gap-6">
-      <div class="text-center">
-        <div class="text-5xl mb-3">⛳</div>
-        <h1 class="text-3xl font-bold text-green-800">Golf Betting</h1>
-        <p class="text-gray-500 mt-1">Pick a player to get started</p>
-      </div>
-      <div id="user-buttons" class="flex flex-col gap-3 w-full max-w-xs">
-        <div class="text-center text-gray-400 text-sm">Loading…</div>
+    <div class="min-h-screen bg-gray-100 flex flex-col items-center justify-start pt-10 px-4"
+         style="font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;">
+      <div class="bg-white border border-gray-300 rounded shadow-sm w-full max-w-lg">
+        <div class="bg-gradient-to-r from-gray-700 to-gray-600 text-white px-5 py-3 rounded-t flex items-center gap-3">
+          <span class="text-2xl">🖨️</span>
+          <div>
+            <h1 class="text-sm font-bold tracking-wide">HP LaserJet Pro M404n</h1>
+            <p class="text-xs text-gray-300">Configuration Utility v3.8.1</p>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-b border-gray-200 bg-gray-50">
+          <div class="flex gap-6 text-xs text-gray-500">
+            <span>Status: <span class="text-green-600 font-semibold">Ready</span></span>
+            <span>Toner: 68%</span>
+            <span>Pages Printed: 12,407</span>
+          </div>
+        </div>
+        <div class="px-5 py-5">
+          <div id="printer-form">
+            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Print Driver</label>
+            <select id="driver-select"
+              class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-gray-400">
+              <option value="">Loading drivers…</option>
+            </select>
+            <button onclick="printerApply()"
+              class="mt-4 w-full bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 rounded transition-colors">
+              Apply Configuration
+            </button>
+          </div>
+        </div>
+        <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 rounded-b">
+          <p class="text-[10px] text-gray-400 text-center">Copyright 2009 Hewlett-Packard Development Company, L.P.</p>
+        </div>
       </div>
     </div>`;
 
   api('GET', '/users').then((users) => {
     if (!users || users.length === 0) {
-      el('user-buttons').innerHTML = '<div class="text-center text-red-500 text-sm">No users found. Check server logs.</div>';
+      el('driver-select').innerHTML = '<option value="">No drivers found</option>';
       return;
     }
-    el('user-buttons').innerHTML = users.map((u) => `
-      <button onclick="showPinInput('${u}')"
-        class="btn btn-primary w-full py-3 text-base">
-        ${u}
-      </button>`).join('');
-  }).catch((err) => {
-    el('user-buttons').innerHTML = `<div class="text-center text-red-500 text-sm">Error: ${err.message}</div>`;
+    el('driver-select').innerHTML =
+      '<option value="">— Select Driver —</option>' +
+      users.map((u) => `<option value="${u}">${u}</option>`).join('');
+  }).catch(() => {
+    el('driver-select').innerHTML = '<option value="">Error loading drivers</option>';
   });
 }
 
+window.printerApply = function() {
+  const name = el('driver-select')?.value;
+  if (!name) return;
+  showPinInput(name);
+};
+
 window.showPinInput = function(name) {
-  el('user-buttons').innerHTML = `
-    <div class="text-center mb-2">
-      <span class="text-lg font-semibold text-green-800">${name}</span>
-    </div>
+  el('printer-form').innerHTML = `
+    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
+      Administrator Authentication
+    </label>
+    <p class="text-xs text-gray-400 mb-3">Enter admin password to apply driver changes for "${name}"</p>
     <input type="password" inputmode="numeric" maxlength="4" pattern="\\d{4}"
       id="pin-input" placeholder="10-char alphanumeric password"
-      class="w-full text-center text-2xl tracking-widest py-3 border rounded-lg" />
-    <button onclick="login('${name}')" class="btn btn-primary w-full py-3 text-base mt-2">
-      Sign In
+      class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-gray-400 tracking-widest" />
+    <button onclick="login('${name}')"
+      class="mt-3 w-full bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 rounded transition-colors">
+      Authenticate &amp; Apply
     </button>
-    <button onclick="renderApp()" class="text-sm text-gray-500 hover:text-gray-700 mt-2 w-full text-center">
-      Back
+    <button onclick="renderApp()"
+      class="mt-2 w-full text-xs text-gray-400 hover:text-gray-600 text-center">
+      Cancel
     </button>
-    <div id="pin-error" class="text-red-500 text-sm text-center mt-1 hidden"></div>`;
+    <div id="pin-error" class="text-red-600 text-xs text-center mt-2 hidden"></div>`;
   setTimeout(() => el('pin-input').focus(), 50);
   el('pin-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') login(name);
