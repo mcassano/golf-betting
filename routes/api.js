@@ -245,19 +245,6 @@ router.get('/teams/:player', async (req, res) => {
   res.json(golfers);
 });
 
-// Admin: replace a team wholesale. Body: { golfers: [name, ...] }
-router.put('/admin/teams/:player', requireUser, async (req, res) => {
-  const { golfers } = req.body;
-  if (!Array.isArray(golfers)) return res.status(400).json({ error: 'golfers array required' });
-  const allGolfers = await getJSON('tournament:players') || [];
-  const validNames = new Set(allGolfers.map((g) => g.name));
-  const invalid = golfers.filter((g) => !validNames.has(g));
-  if (invalid.length) return res.status(400).json({ error: `Unknown golfers: ${invalid.join(', ')}` });
-  await setJSON(`teams:${req.params.player}`, golfers);
-  emit('teams:updated', { player: req.params.player });
-  res.json({ ok: true, golfers });
-});
-
 // ── WC ────────────────────────────────────────────────────────────────────────
 
 router.get('/wc', async (req, res) => {
@@ -361,17 +348,6 @@ router.post('/admin/scores/wd', requireUser, async (req, res) => {
   }
   emit('scores:updated', { golfer, wd: true, fromDay: dayStart });
   res.json({ ok: true, fromDay: dayStart, throughDay: 4 });
-});
-
-// Admin: unlock a score so ESPN sync can write to it again
-router.delete('/admin/scores/lock', requireUser, async (req, res) => {
-  const { golfer, day } = req.body;
-  if (!golfer || !day) return res.status(400).json({ error: 'golfer and day required' });
-  const key = encodeKey(golfer);
-  const lockId = `${key}:day${parseInt(day, 10)}`;
-  const locked = await getJSON('scores:locked') || [];
-  await setJSON('scores:locked', locked.filter((l) => l !== lockId));
-  res.json({ ok: true });
 });
 
 // Bulk score entry (paste a whole day's scores at once)
