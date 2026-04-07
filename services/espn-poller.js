@@ -48,10 +48,21 @@ async function poll(io) {
 
 async function currentDayComplete(day) {
   if (!['day1', 'day2', 'day3', 'day4'].includes(day)) return false;
+  const dayNum = parseInt(day.replace('day', ''), 10);
   const players = await getJSON('tournament:players') || [];
   if (!players.length) return false;
   for (const p of players) {
-    const v = await get(`scores:${encodeKey(p.name)}:${day}`);
+    const key = encodeKey(p.name);
+    // Skip players who were CUT or WD on a previous day — they won't have
+    // scores for this day and shouldn't block auto-stop.
+    let eliminated = false;
+    for (let d = 1; d < dayNum; d++) {
+      const prev = await get(`scores:${key}:day${d}`);
+      if (prev === 'CUT' || prev === 'WD') { eliminated = true; break; }
+    }
+    if (eliminated) continue;
+
+    const v = await get(`scores:${key}:${day}`);
     if (v === null || v === undefined) return false;
   }
   return true;

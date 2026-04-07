@@ -29,6 +29,12 @@ export function bestNScore(rawScores, bestN) {
     }
   }
 
+  // If bestN dropped to 0 (all 6 WD) or we have no valid scores,
+  // treat as partial — there's nothing meaningful to sum.
+  if (bestN <= 0 || scores.length === 0) {
+    return { total: 0, partial: true };
+  }
+
   scores.sort((a, b) => a - b);
   const take = Math.min(bestN, scores.length);
   const total = scores.slice(0, take).reduce((sum, s) => sum + s, 0);
@@ -124,15 +130,18 @@ export function countMaxWDs(teams) {
   return max;
 }
 
-// All 21 selected golfers' individual scores for a given day (drafted + WC).
+// All selected golfers' individual scores for a given day (drafted + WC).
 // WD golfers are excluded (resolveScore returns null for WD).
+// Returns { entries, expected } so callers can detect incomplete data.
 export async function allSelectedScoresForDay(users, dayN) {
   const entries = [];
+  let expected = 0;
 
   for (const user of users) {
     const golfers = await getJSON(`teams:${user}`) || [];
     for (const golfer of golfers) {
       const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
+      if (!isWD(raw)) expected++;
       const score = resolveScore(raw);
       if (score !== null) entries.push({ golfer, score, owner: user, isWC: false });
     }
@@ -140,12 +149,13 @@ export async function allSelectedScoresForDay(users, dayN) {
     const wc = await get(`wc:${user}`);
     if (wc) {
       const raw = await get(`scores:${encodeKey(wc)}:day${dayN}`);
+      if (!isWD(raw)) expected++;
       const score = resolveScore(raw);
       if (score !== null) entries.push({ golfer: wc, score, owner: user, isWC: true });
     }
   }
 
-  return entries;
+  return { entries, expected };
 }
 
 // Encode golfer name for use as Redis key part (replace spaces/special chars)

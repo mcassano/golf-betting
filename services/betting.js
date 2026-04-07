@@ -121,8 +121,10 @@ export async function computeLeaderboard(users, meta) {
 }
 
 export async function computeWCDailyResult(users, dayN) {
-  const entries = await allSelectedScoresForDay(users, dayN);
+  const { entries, expected } = await allSelectedScoresForDay(users, dayN);
   if (entries.length === 0) return { type: 'pending' };
+  // Don't declare a winner until all non-WD golfers have scores
+  if (entries.length < expected) return { type: 'pending' };
 
   const minScore = Math.min(...entries.map((e) => e.score));
   const atMin = entries.filter((e) => e.score === minScore);
