@@ -592,6 +592,21 @@ async function renderLeaderboard(container) {
     html += renderBetCard(label, bet, users);
   }
 
+  // WC Daily side bet
+  if (lb.wcDaily) {
+    const wcDayDefs = [
+      { key: 'day1', label: 'Day 1' },
+      { key: 'day2', label: 'Day 2' },
+      { key: 'day3', label: 'Day 3' },
+      { key: 'day4', label: 'Day 4' },
+    ];
+    for (const { key, label } of wcDayDefs) {
+      const wd = lb.wcDaily[key];
+      if (!wd) continue;
+      html += renderWCDailyCard(label, wd);
+    }
+  }
+
   // WC
   if (lb.wc) {
     const wc = lb.wc;
@@ -642,6 +657,28 @@ function renderBetCard(label, bet, users) {
   </div>`;
 }
 
+function renderWCDailyCard(label, wd) {
+  let resultHtml = '';
+  if (wd.type === 'pending') {
+    resultHtml = '<p class="text-sm text-gray-400 italic">Scores pending...</p>';
+  } else if (wd.type === 'no_wc_winner') {
+    resultHtml = `<p class="text-sm text-gray-500">No WC payout — lowest round (${wd.minScore}) by ${wd.lowGolfers.join(', ')}.</p>`;
+  } else if (wd.type === 'three_way_tie') {
+    resultHtml = '<p class="text-sm text-gray-500">No payout — all WCs tied.</p>';
+  } else {
+    const payout = wd.wcWinners.length === 1
+      ? `${wd.wcWinners[0]} collects $${wd.losers.length * 5}`
+      : `${wd.wcWinners.join(' & ')} each collect $5 from ${wd.losers[0]}`;
+    resultHtml = `<div class="alert alert-success mt-1">🎯 ${payout}</div>`;
+  }
+
+  return `
+  <div class="card mb-4">
+    <div class="section-title">🎯 WC Daily — ${label}</div>
+    ${resultHtml}
+  </div>`;
+}
+
 function computePayoutSummary(lb, users) {
   const summary = {};
   users.forEach((u) => (summary[u] = { won: 0, lost: 0 }));
@@ -659,7 +696,22 @@ function computePayoutSummary(lb, users) {
     }
   }
 
-  // WC
+  // WC Daily
+  if (lb.wcDaily) {
+    for (const key of ['day1', 'day2', 'day3', 'day4']) {
+      const wd = lb.wcDaily[key];
+      if (!wd || !wd.wcWinners) continue;
+      if (wd.type === 'winner') {
+        summary[wd.wcWinners[0]].won += 10;
+        wd.losers.forEach((l) => { summary[l].lost += 5; });
+      } else if (wd.type === 'two_way_tie') {
+        wd.wcWinners.forEach((w) => { summary[w].won += 5; });
+        wd.losers.forEach((l) => { summary[l].lost += 10; });
+      }
+    }
+  }
+
+  // WC Tournament
   if (lb.wc?.resolved && lb.wc.wcWinners?.length) {
     lb.wc.wcWinners.forEach((w) => {
       summary[w].won += 40;

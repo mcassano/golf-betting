@@ -6,6 +6,7 @@ import {
   allGolfersCumulative,
   countMaxWDs,
   encodeKey,
+  allSelectedScoresForDay,
 } from './scoring.js';
 
 export function determineBetWinner(scores) {
@@ -96,6 +97,13 @@ export async function computeLeaderboard(users, meta) {
     result.overall = { scores: overallScores, partial: anyPartial, ...determineBetWinner(overallScores) };
   }
 
+  // WC daily side bet (days 1-4 only, reuse dayDefs loop)
+  result.wcDaily = {};
+  for (const { key, n, minStatusIdx } of dayDefs) {
+    if (currentIdx < minStatusIdx) continue;
+    result.wcDaily[key] = await computeWCDailyResult(users, n);
+  }
+
   // WC result available when complete
   if (status === 'complete') {
     result.wc = await computeWCResult(users);
@@ -109,6 +117,33 @@ export async function computeLeaderboard(users, meta) {
   }
 
   return result;
+}
+
+export async function computeWCDailyResult(users, dayN) {
+  const entries = await allSelectedScoresForDay(users, dayN);
+  if (entries.length === 0) return { type: 'pending' };
+
+  const minScore = Math.min(...entries.map((e) => e.score));
+  const atMin = entries.filter((e) => e.score === minScore);
+
+  // If any drafted golfer ties at the min, no WC payout
+  if (atMin.some((e) => !e.isWC)) {
+    return { type: 'no_wc_winner', minScore, lowGolfers: atMin.map((e) => e.golfer) };
+  }
+
+  // All golfers at the min are WC picks
+  const wcWinners = [...new Set(atMin.map((e) => e.owner))];
+  const losers = users.filter((u) => !wcWinners.includes(u));
+
+  if (wcWinners.length === users.length) {
+    return { type: 'three_way_tie' };
+  }
+
+  return {
+    type: wcWinners.length === 1 ? 'winner' : 'two_way_tie',
+    wcWinners,
+    losers,
+  };
 }
 
 export async function computeWCResult(users) {

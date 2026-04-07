@@ -116,6 +116,30 @@ export function countMaxWDs(teams) {
   return max;
 }
 
+// All 21 selected golfers' individual scores for a given day (drafted + WC).
+// WD golfers are excluded (resolveScore returns null for WD).
+export async function allSelectedScoresForDay(users, dayN) {
+  const entries = [];
+
+  for (const user of users) {
+    const golfers = await getJSON(`teams:${user}`) || [];
+    for (const golfer of golfers) {
+      const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
+      const score = resolveScore(raw);
+      if (score !== null) entries.push({ golfer, score, owner: user, isWC: false });
+    }
+
+    const wc = await get(`wc:${user}`);
+    if (wc) {
+      const raw = await get(`scores:${encodeKey(wc)}:day${dayN}`);
+      const score = resolveScore(raw);
+      if (score !== null) entries.push({ golfer: wc, score, owner: user, isWC: true });
+    }
+  }
+
+  return entries;
+}
+
 // Encode golfer name for use as Redis key part (replace spaces/special chars)
 export function encodeKey(name) {
   return name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '');
