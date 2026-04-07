@@ -204,6 +204,7 @@ window.login = async function(name) {
     await api('POST', '/session', { name, pin });
     state.user = name;
     state.tournament = await api('GET', '/tournament');
+    document.title = state.tournament?.name || 'Golf Betting';
     setupSocket();
     navigate(routeFromStatus(state.tournament?.status));
   } catch (e) {
@@ -219,6 +220,7 @@ window.logout = async function() {
   await api('POST', '/session/logout');
   state.user = null;
   state.tournament = null;
+  document.title = 'HP LaserJet Pro M404n';
   if (socket) { socket.disconnect(); socket = null; }
   navigate('login');
 };
@@ -1050,6 +1052,7 @@ async function init() {
     if (session.name) {
       state.user = session.name;
       state.tournament = await api('GET', '/tournament');
+      document.title = state.tournament?.name || 'Golf Betting';
       setupSocket();
       navigate(routeFromStatus(state.tournament?.status));
     } else {
