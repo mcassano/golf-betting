@@ -3,6 +3,8 @@ import { get, set, getJSON, setJSON, keys, del, withLock } from '../services/red
 import { shuffle, buildPickOrder, getCurrentPlayer, buildTeams } from '../services/draft.js';
 import { computeLeaderboard } from '../services/betting.js';
 import { encodeKey } from '../services/scoring.js';
+import { syncScores, syncPlayers } from '../services/espn-sync.js';
+import { startPolling, stopPolling, getPollingStatus } from '../services/espn-poller.js';
 
 const router = Router();
 
@@ -333,6 +335,13 @@ router.post('/admin/scores', requireUser, async (req, res) => {
   const key = encodeKey(golfer);
   const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
   await set(`scores:${key}:day${dayN}`, val);
+  // Lock this score so ESPN sync won't overwrite it
+  const locked = await getJSON('scores:locked') || [];
+  const lockId = `${key}:day${dayN}`;
+  if (!locked.includes(lockId)) {
+    locked.push(lockId);
+    await setJSON('scores:locked', locked);
+  }
   emit('scores:updated', { golfer, day: dayN, score: val });
   res.json({ ok: true });
 });
@@ -363,11 +372,15 @@ router.post('/admin/scores/bulk', requireUser, async (req, res) => {
   const { day, scores } = req.body;
   if (!day || !Array.isArray(scores)) return res.status(400).json({ error: 'day and scores[] required' });
   const dayN = parseInt(day, 10);
+  const locked = await getJSON('scores:locked') || [];
   for (const { golfer, score } of scores) {
     const key = encodeKey(golfer);
     const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
     await set(`scores:${key}:day${dayN}`, val);
+    const lockId = `${key}:day${dayN}`;
+    if (!locked.includes(lockId)) locked.push(lockId);
   }
+  await setJSON('scores:locked', locked);
   emit('scores:updated', { bulk: true, day: dayN });
   res.json({ ok: true });
 });
@@ -379,6 +392,56 @@ router.get('/leaderboard', async (req, res) => {
   const meta = await getJSON('tournament:meta');
   const leaderboard = await computeLeaderboard(users, meta);
   res.json(leaderboard);
+});
+
+// ── ESPN Integration ─────────────────────────────────────────────────────────
+
+router.post('/admin/espn/sync-players', requireUser, async (req, res) => {
+  try {
+    const result = await syncPlayers(req.body?.date);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[ESPN] Player sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/admin/espn/sync-scores', requireUser, async (req, res) => {
+  try {
+    const result = await syncScores(_io, req.body?.date);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[ESPN] Score sync error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/admin/espn/start-polling', requireUser, async (req, res) => {
+  const started = startPolling(_io);
+  if (started) {
+    res.json({ ok: true, message: 'Polling started' });
+  } else {
+    res.json({ ok: false, message: 'Already polling' });
+  }
+});
+
+router.post('/admin/espn/stop-polling', requireUser, async (req, res) => {
+  const stopped = stopPolling();
+  if (stopped) {
+    res.json({ ok: true, message: 'Polling stopped' });
+  } else {
+    res.json({ ok: false, message: 'Not currently polling' });
+  }
+});
+
+router.get('/admin/espn/status', requireUser, async (req, res) => {
+  const status = getPollingStatus();
+  const meta = await getJSON('tournament:meta');
+  res.json({
+    ...status,
+    lastEspnSync: meta?.lastEspnSync || null,
+    espnEventId: meta?.espnEventId || null,
+  });
 });
 
 export default router;
