@@ -57,13 +57,10 @@ export async function syncScores(io, date) {
     io.emit('scores:updated', { source: 'espn', updated });
   }
 
-  // Store last sync time
-  if (updated > 0) {
-    const meta = await getJSON('tournament:meta');
-    if (meta) {
-      meta.lastEspnSync = new Date().toISOString();
-      await setJSON('tournament:meta', meta);
-    }
+  const meta = await getJSON('tournament:meta');
+  if (meta) {
+    meta.lastEspnSync = new Date().toISOString();
+    await setJSON('tournament:meta', meta);
   }
 
   console.log(`[ESPN Sync] Scores synced: ${updated} updated, ${skipped} skipped (no match)`);
@@ -95,17 +92,13 @@ export async function syncPlayers(date) {
 
   await setJSON('tournament:players', players);
 
-  // Store course par in tournament meta
   const meta = await getJSON('tournament:meta') || { name: tournament.eventName, status: 'setup' };
-  if (tournament.coursePar) {
-    meta.coursePar = tournament.coursePar;
-  }
   if (!meta.name || meta.name === 'Unknown Event') {
     meta.name = tournament.eventName;
   }
   meta.espnEventId = tournament.eventId;
   await setJSON('tournament:meta', meta);
 
-  console.log(`[ESPN Sync] Players synced: ${players.length} players, par ${tournament.coursePar || 'unknown'}`);
-  return { players, eventName: tournament.eventName, coursePar: tournament.coursePar };
+  console.log(`[ESPN Sync] Players synced: ${players.length} players`);
+  return { players, eventName: tournament.eventName };
 }
