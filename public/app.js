@@ -144,7 +144,7 @@ window.showPinInput = function(name) {
       <span class="text-lg font-semibold text-green-800">${name}</span>
     </div>
     <input type="password" inputmode="numeric" maxlength="4" pattern="\\d{4}"
-      id="pin-input" placeholder="4-digit PIN"
+      id="pin-input" placeholder="10-char alphanumeric password"
       class="w-full text-center text-2xl tracking-widest py-3 border rounded-lg" />
     <button onclick="login('${name}')" class="btn btn-primary w-full py-3 text-base mt-2">
       Sign In
@@ -164,7 +164,7 @@ window.login = async function(name) {
   const pin = pinInput?.value || '';
   if (!/^\d{4}$/.test(pin)) {
     const err = el('pin-error');
-    err.textContent = 'Enter a 4-digit PIN';
+    err.textContent = 'Enter a 10-char alphanumeric password';
     err.classList.remove('hidden');
     return;
   }
