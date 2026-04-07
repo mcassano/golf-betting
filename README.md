@@ -19,6 +19,15 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
 
 Admin can mark a golfer as WD from a given day forward via the score table. WD differs from CUT: CUT golfers take a 99-stroke penalty for remaining days, while WDs trigger the days-1&2 leveling adjustment above.
 
+## ESPN Score Sync
+
+The admin panel can pull live scores from ESPN's public PGA scoreboard instead of entering them by hand.
+
+- **Setup**: pick the ESPN event during tournament setup; players are pulled from the ESPN field by `espnId`.
+- **Sync Now**: one-shot fetch that updates any completed round (18 holes) for every player. Manual edits made in the score table take precedence — the sync will not clobber admin overrides.
+- **Start Polling / Stop Polling**: background loop that calls Sync Now every 30 minutes. Polling auto-stops once every player has a score recorded for the current day (`meta.status`); admin manually restarts it the next morning.
+- Polling state and last-poll time are visible in the admin panel during day1–day4.
+
 ## Prerequisites
 
 - **Node.js** 18+
