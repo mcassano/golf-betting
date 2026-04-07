@@ -24,5 +24,5 @@ Charts and visualizations after a tournament wraps: score progression by day, be
 ## Draft Grade Report
 After the tournament, grade each team's draft based on actual results. Compare draft position value vs. outcome. Show steals, busts, and overall draft efficiency.
 
-## PIN Code Auth
-Require a short PIN to log in instead of just selecting a name. Prevents someone from impersonating another player or messing with their picks.
+## ~~PIN Code Auth~~ ✅
+~~Require a short PIN to log in instead of just selecting a name. Prevents someone from impersonating another player or messing with their picks.~~

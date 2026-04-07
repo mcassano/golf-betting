@@ -129,7 +129,7 @@ function renderLogin(container) {
       return;
     }
     el('user-buttons').innerHTML = users.map((u) => `
-      <button onclick="login('${u}')"
+      <button onclick="showPinInput('${u}')"
         class="btn btn-primary w-full py-3 text-base">
         ${u}
       </button>`).join('');
@@ -138,12 +138,49 @@ function renderLogin(container) {
   });
 }
 
+window.showPinInput = function(name) {
+  el('user-buttons').innerHTML = `
+    <div class="text-center mb-2">
+      <span class="text-lg font-semibold text-green-800">${name}</span>
+    </div>
+    <input type="password" inputmode="numeric" maxlength="4" pattern="\\d{4}"
+      id="pin-input" placeholder="4-digit PIN"
+      class="w-full text-center text-2xl tracking-widest py-3 border rounded-lg" />
+    <button onclick="login('${name}')" class="btn btn-primary w-full py-3 text-base mt-2">
+      Sign In
+    </button>
+    <button onclick="renderApp()" class="text-sm text-gray-500 hover:text-gray-700 mt-2 w-full text-center">
+      Back
+    </button>
+    <div id="pin-error" class="text-red-500 text-sm text-center mt-1 hidden"></div>`;
+  setTimeout(() => el('pin-input').focus(), 50);
+  el('pin-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login(name);
+  });
+};
+
 window.login = async function(name) {
-  await api('POST', '/session', { name });
-  state.user = name;
-  state.tournament = await api('GET', '/tournament');
-  setupSocket();
-  navigate(routeFromStatus(state.tournament?.status));
+  const pinInput = el('pin-input');
+  const pin = pinInput?.value || '';
+  if (!/^\d{4}$/.test(pin)) {
+    const err = el('pin-error');
+    err.textContent = 'Enter a 4-digit PIN';
+    err.classList.remove('hidden');
+    return;
+  }
+  try {
+    await api('POST', '/session', { name, pin });
+    state.user = name;
+    state.tournament = await api('GET', '/tournament');
+    setupSocket();
+    navigate(routeFromStatus(state.tournament?.status));
+  } catch (e) {
+    const err = el('pin-error');
+    err.textContent = e.message || 'Invalid PIN';
+    err.classList.remove('hidden');
+    pinInput.value = '';
+    pinInput.focus();
+  }
 };
 
 window.logout = async function() {

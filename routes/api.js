@@ -47,10 +47,15 @@ router.get('/session', (req, res) => {
 });
 
 router.post('/session', async (req, res) => {
-  const { name } = req.body;
+  const { name, pin } = req.body;
   const users = await getJSON('users');
   if (!users || !users.includes(name)) {
     return res.status(400).json({ error: 'Unknown user' });
+  }
+  const correctPin = process.env.GOLF_PIN || '1289';
+  if (!pin || pin !== correctPin) {
+    await new Promise((r) => setTimeout(r, 2000));
+    return res.status(401).json({ error: 'Invalid PIN' });
   }
   res.cookie('user', name, {
     signed: true,
