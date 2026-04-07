@@ -1,6 +1,6 @@
 import { get, getJSON } from './redis.js';
 
-const PENALTY = 80;
+const PENALTY = 99;
 
 export function isWD(raw) {
   return raw === 'WD';

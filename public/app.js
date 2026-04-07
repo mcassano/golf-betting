@@ -21,6 +21,24 @@ async function api(method, path, body) {
 
 function el(id) { return document.getElementById(id); }
 
+// Sum numeric round scores, ignoring CUT/WD/empty. Returns total + count of rounds played.
+function sumPlayed(rounds) {
+  let total = 0, played = 0;
+  for (const v of rounds) {
+    if (v === undefined || v === null || v === '' || v === 'CUT' || v === 'WD') continue;
+    const n = parseInt(v, 10);
+    if (!isNaN(n)) { total += n; played++; }
+  }
+  return { total, played };
+}
+
+// Format raw total relative to par across `played` rounds: e.g. "−4", "E", "+5"
+function toParStr(total, played, par) {
+  const diff = total - played * par;
+  if (diff === 0) return 'E';
+  return diff > 0 ? `+${diff}` : `${diff}`;
+}
+
 function showToast(msg, type = 'info') {
   const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-500', warning: 'bg-yellow-500' };
   const toast = document.createElement('div');
@@ -209,7 +227,7 @@ async function renderAdmin(container) {
     }).join('');
     html += `
     <div class="card mb-4">
-      <div class="section-title">Score Entry <span class="text-xs font-normal text-gray-400 ml-2">Tab through cells · type number, CUT, or WD · saves on leave</span></div>
+      <div class="section-title">Score Entry <span class="text-xs font-normal text-gray-400 ml-2">Tab through cells · raw score (e.g. 68), CUT, or WD · saves on leave</span></div>
       <div class="overflow-x-auto">
         <table class="w-full">
           <thead>
@@ -220,6 +238,19 @@ async function renderAdmin(container) {
           </thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+    </div>`;
+  }
+
+  // ── Tournament par (always editable when a tournament exists)
+  if (status) {
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">Course Par</div>
+      <div class="flex gap-2 items-center">
+        <input type="number" id="t-par" value="${tournament?.par ?? 72}" min="1" class="w-24" />
+        <button onclick="saveTournamentPar()" class="btn btn-secondary btn-sm">Save Par</button>
+        <span class="text-xs text-gray-400">Used to derive "to par" displays from raw scores.</span>
       </div>
     </div>`;
   }
@@ -247,6 +278,15 @@ async function renderAdmin(container) {
 
   container.innerHTML = html;
 }
+
+window.saveTournamentPar = async function() {
+  const par = parseInt(el('t-par').value, 10);
+  if (!par || par <= 0) return;
+  await api('POST', '/admin/tournament/par', { par });
+  state.tournament = await api('GET', '/tournament');
+  showToast(`Course par set to ${par}`, 'success');
+  navigate('admin');
+};
 
 window.saveTournamentName = async function() {
   const name = el('t-name').value.trim();
@@ -762,18 +802,14 @@ async function renderScoreboard(container) {
             ${golfers.map((g) => {
               const s = scores[g] || {};
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const total = dayScores.reduce((sum, v) => {
-                if (!v) return sum;
-                if (v === 'CUT' || v === 'WD') return sum + 80;
-                return sum + parseInt(v, 10);
-              }, 0);
+              const { total, played } = sumPlayed(dayScores);
               return `<tr>
                 <td class="font-medium">
                   ${g}
                   ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                 </td>
                 ${dayScores.map((v) => `<td>${v === 'CUT' ? '<span class="badge badge-cut">CUT</span>' : v === 'WD' ? '<span class="badge badge-wd">WD</span>' : (v || '<span class="text-gray-300">—</span>')}</td>`).join('')}
-                <td class="font-semibold">${total || '<span class="text-gray-300">—</span>'}</td>
+                <td class="font-semibold">${played ? `${total} <span class="text-xs font-normal text-gray-500">(${toParStr(total, played, tournament?.par || 72)})</span>` : '<span class="text-gray-300">—</span>'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -797,15 +833,11 @@ async function renderScoreboard(container) {
             ${scored.map((g) => {
               const s = scores[g] || {};
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const total = dayScores.reduce((sum, v) => {
-                if (!v) return sum;
-                if (v === 'CUT' || v === 'WD') return sum + 80;
-                return sum + parseInt(v, 10);
-              }, 0);
+              const { total, played } = sumPlayed(dayScores);
               return `<tr>
                 <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
                 ${dayScores.map((v) => `<td>${v === 'CUT' ? '<span class="badge badge-cut">CUT</span>' : v === 'WD' ? '<span class="badge badge-wd">WD</span>' : (v || '<span class="text-gray-300">—</span>')}</td>`).join('')}
-                <td class="font-semibold">${total || '—'}</td>
+                <td class="font-semibold">${played ? `${total} <span class="text-xs font-normal text-gray-500">(${toParStr(total, played, tournament?.par || 72)})</span>` : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>

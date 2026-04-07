@@ -17,7 +17,7 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
 
 ## Withdrawals (WD)
 
-Admin can mark a golfer as WD from a given day forward via the score table. WD differs from CUT: CUT golfers take an 80-stroke penalty for remaining days, while WDs trigger the days-1&2 leveling adjustment above.
+Admin can mark a golfer as WD from a given day forward via the score table. WD differs from CUT: CUT golfers take a 99-stroke penalty for remaining days, while WDs trigger the days-1&2 leveling adjustment above.
 
 ## Prerequisites
 

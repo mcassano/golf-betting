@@ -79,9 +79,25 @@ router.get('/tournament', async (req, res) => {
 });
 
 router.post('/admin/tournament', requireUser, async (req, res) => {
-  const { name } = req.body;
+  const { name, par } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
-  await setJSON('tournament:meta', { name, status: 'setup' });
+  const parN = parseInt(par, 10);
+  await setJSON('tournament:meta', {
+    name,
+    status: 'setup',
+    par: Number.isFinite(parN) && parN > 0 ? parN : 72,
+  });
+  res.json({ ok: true });
+});
+
+router.post('/admin/tournament/par', requireUser, async (req, res) => {
+  const par = parseInt(req.body?.par, 10);
+  if (!Number.isFinite(par) || par <= 0) return res.status(400).json({ error: 'par must be a positive number' });
+  const meta = await getJSON('tournament:meta');
+  if (!meta) return res.status(400).json({ error: 'No tournament' });
+  meta.par = par;
+  await setJSON('tournament:meta', meta);
+  emit('tournament:par', { par });
   res.json({ ok: true });
 });
 
