@@ -71,7 +71,7 @@ export async function computeLeaderboard(users, meta) {
         scores[user] = res.partial ? null : res.total;
         if (res.partial) anyPartial = true;
       }
-      result[key] = { scores, partial: anyPartial, bestN, ...determineBetWinner(scores) };
+      result[key] = { scores, partial: anyPartial, bestN, rounds: bestN, ...determineBetWinner(scores) };
     } else {
       // Days 3 & 4: best 2, unchanged
       const scores = {};
@@ -81,7 +81,7 @@ export async function computeLeaderboard(users, meta) {
         scores[user] = res.partial ? null : res.total;
         if (res.partial) anyPartial = true;
       }
-      result[key] = { scores, partial: anyPartial, ...determineBetWinner(scores) };
+      result[key] = { scores, partial: anyPartial, rounds: 2, ...determineBetWinner(scores) };
     }
   }
 
@@ -94,7 +94,8 @@ export async function computeLeaderboard(users, meta) {
       overallScores[user] = res.partial ? null : res.total;
       if (res.partial) anyPartial = true;
     }
-    result.overall = { scores: overallScores, partial: anyPartial, ...determineBetWinner(overallScores) };
+    // Overall = best 2 cumulative across all 4 days → 8 round-scores per team.
+    result.overall = { scores: overallScores, partial: anyPartial, rounds: 8, ...determineBetWinner(overallScores) };
   }
 
   // WC daily side bet (days 1-4 only, reuse dayDefs loop)

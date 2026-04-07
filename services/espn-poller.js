@@ -33,9 +33,12 @@ async function poll(io) {
     lastPollTime = new Date().toISOString();
     console.log(`[ESPN Poller] Poll complete: ${result.updated} scores updated`);
 
-    // Auto-stop once every player has a day4 score recorded (including CUT/WD).
-    if (await tournamentComplete()) {
-      console.log('[ESPN Poller] All day4 scores recorded, auto-stopping');
+    // Auto-stop once every player has a score for the current day (including
+    // CUT/WD). Admin manually restarts polling for the next day.
+    const meta = await getJSON('tournament:meta');
+    const day = meta?.status; // 'day1'..'day4'
+    if (await currentDayComplete(day)) {
+      console.log(`[ESPN Poller] All ${day} scores recorded, auto-stopping`);
       stopPolling();
     }
   } catch (err) {
@@ -43,11 +46,12 @@ async function poll(io) {
   }
 }
 
-async function tournamentComplete() {
+async function currentDayComplete(day) {
+  if (!['day1', 'day2', 'day3', 'day4'].includes(day)) return false;
   const players = await getJSON('tournament:players') || [];
   if (!players.length) return false;
   for (const p of players) {
-    const v = await get(`scores:${encodeKey(p.name)}:day4`);
+    const v = await get(`scores:${encodeKey(p.name)}:${day}`);
     if (v === null || v === undefined) return false;
   }
   return true;

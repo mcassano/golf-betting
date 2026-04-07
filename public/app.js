@@ -33,10 +33,22 @@ function sumPlayed(rounds) {
 }
 
 // Format raw total relative to par across `played` rounds: e.g. "−4", "E", "+5"
+// Under-par values are wrapped in a red span (golf convention).
 function toParStr(total, played, par) {
   const diff = total - played * par;
   if (diff === 0) return 'E';
-  return diff > 0 ? `+${diff}` : `${diff}`;
+  if (diff > 0) return `+${diff}`;
+  return `<span class="text-red-600">${diff}</span>`;
+}
+
+// Render a raw round score (e.g. "68"), coloring red if under par.
+function dayCell(v, par) {
+  if (v === undefined || v === null || v === '') return '<span class="text-gray-300">—</span>';
+  if (v === 'CUT') return '<span class="badge badge-cut">CUT</span>';
+  if (v === 'WD') return '<span class="badge badge-wd">WD</span>';
+  const n = parseInt(v, 10);
+  if (!isNaN(n) && n < par) return `<span class="text-red-600">${v}</span>`;
+  return `${v}`;
 }
 
 function showToast(msg, type = 'info') {
@@ -242,6 +254,27 @@ async function renderAdmin(container) {
     </div>`;
   }
 
+  // ── ESPN Polling (when tournament is in an active day)
+  if (status && ['day1', 'day2', 'day3', 'day4'].includes(status)) {
+    const espn = await api('GET', '/admin/espn/status').catch(() => null);
+    const polling = !!espn?.polling;
+    const last = espn?.lastPollTime ? new Date(espn.lastPollTime).toLocaleString() : 'never';
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">ESPN Polling</div>
+      <div class="text-sm text-gray-600 mb-2">
+        Status: <span class="${polling ? 'text-green-700' : 'text-gray-500'} font-medium">${polling ? 'on' : 'off'}</span>
+        · last poll: <span class="font-mono text-xs">${last}</span>
+      </div>
+      <div class="flex gap-2">
+        ${polling
+          ? `<button onclick="stopEspnPolling()" class="btn btn-secondary btn-sm">Stop Polling</button>`
+          : `<button onclick="startEspnPolling()" class="btn btn-primary btn-sm">Start Polling</button>`}
+        <button onclick="syncEspnNow()" class="btn btn-secondary btn-sm">Sync Now</button>
+      </div>
+    </div>`;
+  }
+
   // ── Tournament par (always editable when a tournament exists)
   if (status) {
     html += `
@@ -278,6 +311,24 @@ async function renderAdmin(container) {
 
   container.innerHTML = html;
 }
+
+window.startEspnPolling = async function() {
+  await api('POST', '/admin/espn/start-polling');
+  showToast('ESPN polling started', 'success');
+  navigate('admin');
+};
+
+window.stopEspnPolling = async function() {
+  await api('POST', '/admin/espn/stop-polling');
+  showToast('ESPN polling stopped', 'success');
+  navigate('admin');
+};
+
+window.syncEspnNow = async function() {
+  const r = await api('POST', '/admin/espn/sync-scores', {});
+  showToast(`Synced ${r?.updated ?? 0} scores`, 'success');
+  navigate('admin');
+};
 
 window.saveTournamentPar = async function() {
   const par = parseInt(el('t-par').value, 10);
@@ -629,7 +680,7 @@ async function renderLeaderboard(container) {
   for (const { key, label } of betDefs) {
     const bet = lb[key];
     if (!bet) continue;
-    html += renderBetCard(label, bet, users);
+    html += renderBetCard(label, bet, users, tournament?.par || 72);
   }
 
   // WC Daily side bet
@@ -643,7 +694,7 @@ async function renderLeaderboard(container) {
     for (const { key, label } of wcDayDefs) {
       const wd = lb.wcDaily[key];
       if (!wd) continue;
-      html += renderWCDailyCard(label, wd);
+      html += renderWCDailyCard(label, wd, tournament?.par || 72);
     }
   }
 
@@ -672,8 +723,9 @@ async function renderLeaderboard(container) {
   container.innerHTML = html;
 }
 
-function renderBetCard(label, bet, users) {
+function renderBetCard(label, bet, users, par) {
   const isWinner = (p) => bet.winner === p || (bet.winners && bet.winners.includes(p));
+  const rounds = bet.rounds;
 
   return `
   <div class="card mb-4">
@@ -684,9 +736,12 @@ function renderBetCard(label, bet, users) {
         ${users.map((u) => {
           const score = bet.scores?.[u];
           const won = isWinner(u);
+          const scoreCell = score === null || score === undefined
+            ? '<span class="text-gray-400">—</span>'
+            : (rounds ? toParStr(score, rounds, par) : score);
           return `<tr>
             <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner text-xs">you</span>' : ''}</td>
-            <td>${score === null ? '<span class="text-gray-400">—</span>' : score}</td>
+            <td>${scoreCell}</td>
             <td>${won && bet.type === 'winner' ? '<span class="badge badge-winner">WIN +$10</span>' : won && bet.type === 'two_way_tie' ? '<span class="badge badge-winner">TIE +$5</span>' : won ? '<span class="badge badge-winner">WIN</span>' : '<span class="text-gray-400 text-xs">-$5</span>'}</td>
           </tr>`;
         }).join('')}
@@ -697,12 +752,12 @@ function renderBetCard(label, bet, users) {
   </div>`;
 }
 
-function renderWCDailyCard(label, wd) {
+function renderWCDailyCard(label, wd, par) {
   let resultHtml = '';
   if (wd.type === 'pending') {
     resultHtml = '<p class="text-sm text-gray-400 italic">Scores pending...</p>';
   } else if (wd.type === 'no_wc_winner') {
-    resultHtml = `<p class="text-sm text-gray-500">No WC payout — lowest round (${wd.minScore}) by ${wd.lowGolfers.join(', ')}.</p>`;
+    resultHtml = `<p class="text-sm text-gray-500">No WC payout — lowest round (${toParStr(wd.minScore, 1, par)}) by ${wd.lowGolfers.join(', ')}.</p>`;
   } else if (wd.type === 'three_way_tie') {
     resultHtml = '<p class="text-sm text-gray-500">No payout — all WCs tied.</p>';
   } else {
@@ -808,8 +863,8 @@ async function renderScoreboard(container) {
                   ${g}
                   ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                 </td>
-                ${dayScores.map((v) => `<td>${v === 'CUT' ? '<span class="badge badge-cut">CUT</span>' : v === 'WD' ? '<span class="badge badge-wd">WD</span>' : (v || '<span class="text-gray-300">—</span>')}</td>`).join('')}
-                <td class="font-semibold">${played ? `${total} <span class="text-xs font-normal text-gray-500">(${toParStr(total, played, tournament?.par || 72)})</span>` : '<span class="text-gray-300">—</span>'}</td>
+                ${dayScores.map((v) => `<td>${dayCell(v, tournament?.par || 72)}</td>`).join('')}
+                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '<span class="text-gray-300">—</span>'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -836,8 +891,8 @@ async function renderScoreboard(container) {
               const { total, played } = sumPlayed(dayScores);
               return `<tr>
                 <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
-                ${dayScores.map((v) => `<td>${v === 'CUT' ? '<span class="badge badge-cut">CUT</span>' : v === 'WD' ? '<span class="badge badge-wd">WD</span>' : (v || '<span class="text-gray-300">—</span>')}</td>`).join('')}
-                <td class="font-semibold">${played ? `${total} <span class="text-xs font-normal text-gray-500">(${toParStr(total, played, tournament?.par || 72)})</span>` : '—'}</td>
+                ${dayScores.map((v) => `<td>${dayCell(v, tournament?.par || 72)}</td>`).join('')}
+                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>
