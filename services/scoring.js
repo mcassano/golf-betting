@@ -56,8 +56,12 @@ export async function teamScoreBest2ForDay(player, dayN) {
   for (const golfer of golfers) {
     const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
     const score = resolveScore(raw);
-    if (score === null) { partial = true; scores.push(PENALTY); }
-    else scores.push(score);
+    if (score === null) {
+      if (!isWD(raw)) partial = true;
+      scores.push(PENALTY);
+    } else {
+      scores.push(score);
+    }
   }
   scores.sort((a, b) => a - b);
   return { total: scores[0] + scores[1], partial };
@@ -74,8 +78,12 @@ export async function teamOverallScore(player) {
     for (let day = 1; day <= 4; day++) {
       const raw = await get(`scores:${encodeKey(golfer)}:day${day}`);
       const score = resolveScore(raw);
-      if (score === null) { partial = true; cum += PENALTY; }
-      else cum += score;
+      if (score === null) {
+        if (!isWD(raw)) partial = true;
+        cum += PENALTY;
+      } else {
+        cum += score;
+      }
     }
     cumulative.push({ golfer, total: cum });
   }
