@@ -245,6 +245,19 @@ router.get('/teams/:player', async (req, res) => {
   res.json(golfers);
 });
 
+// Admin: replace a team wholesale. Body: { golfers: [name, ...] }
+router.put('/admin/teams/:player', requireUser, async (req, res) => {
+  const { golfers } = req.body;
+  if (!Array.isArray(golfers)) return res.status(400).json({ error: 'golfers array required' });
+  const allGolfers = await getJSON('tournament:players') || [];
+  const validNames = new Set(allGolfers.map((g) => g.name));
+  const invalid = golfers.filter((g) => !validNames.has(g));
+  if (invalid.length) return res.status(400).json({ error: `Unknown golfers: ${invalid.join(', ')}` });
+  await setJSON(`teams:${req.params.player}`, golfers);
+  emit('teams:updated', { player: req.params.player });
+  res.json({ ok: true, golfers });
+});
+
 // ── WC ────────────────────────────────────────────────────────────────────────
 
 router.get('/wc', async (req, res) => {
@@ -319,6 +332,13 @@ router.post('/admin/scores', requireUser, async (req, res) => {
   const key = encodeKey(golfer);
   const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
   await set(`scores:${key}:day${dayN}`, val);
+  // Lock this score so ESPN sync won't overwrite it
+  const locked = await getJSON('scores:locked') || [];
+  const lockId = `${key}:day${dayN}`;
+  if (!locked.includes(lockId)) {
+    locked.push(lockId);
+    await setJSON('scores:locked', locked);
+  }
   emit('scores:updated', { golfer, day: dayN, score: val });
   res.json({ ok: true });
 });
@@ -343,17 +363,32 @@ router.post('/admin/scores/wd', requireUser, async (req, res) => {
   res.json({ ok: true, fromDay: dayStart, throughDay: 4 });
 });
 
+// Admin: unlock a score so ESPN sync can write to it again
+router.delete('/admin/scores/lock', requireUser, async (req, res) => {
+  const { golfer, day } = req.body;
+  if (!golfer || !day) return res.status(400).json({ error: 'golfer and day required' });
+  const key = encodeKey(golfer);
+  const lockId = `${key}:day${parseInt(day, 10)}`;
+  const locked = await getJSON('scores:locked') || [];
+  await setJSON('scores:locked', locked.filter((l) => l !== lockId));
+  res.json({ ok: true });
+});
+
 // Bulk score entry (paste a whole day's scores at once)
 router.post('/admin/scores/bulk', requireUser, async (req, res) => {
   // body: { day: 1, scores: [{golfer, score}, ...] }
   const { day, scores } = req.body;
   if (!day || !Array.isArray(scores)) return res.status(400).json({ error: 'day and scores[] required' });
   const dayN = parseInt(day, 10);
+  const locked = await getJSON('scores:locked') || [];
   for (const { golfer, score } of scores) {
     const key = encodeKey(golfer);
     const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
     await set(`scores:${key}:day${dayN}`, val);
+    const lockId = `${key}:day${dayN}`;
+    if (!locked.includes(lockId)) locked.push(lockId);
   }
+  await setJSON('scores:locked', locked);
   emit('scores:updated', { bulk: true, day: dayN });
   res.json({ ok: true });
 });
@@ -371,7 +406,7 @@ router.get('/leaderboard', async (req, res) => {
 
 router.post('/admin/espn/sync-players', requireUser, async (req, res) => {
   try {
-    const result = await syncPlayers();
+    const result = await syncPlayers(req.body?.date);
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[ESPN] Player sync error:', err.message);
@@ -381,7 +416,7 @@ router.post('/admin/espn/sync-players', requireUser, async (req, res) => {
 
 router.post('/admin/espn/sync-scores', requireUser, async (req, res) => {
   try {
-    const result = await syncScores(_io);
+    const result = await syncScores(_io, req.body?.date);
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[ESPN] Score sync error:', err.message);

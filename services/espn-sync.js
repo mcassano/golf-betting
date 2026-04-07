@@ -7,8 +7,8 @@ import { fetchTournament, fetchScores } from './espn.js';
  * Matches ESPN players to stored players by espnId.
  * Emits scores:updated via Socket.io after updates.
  */
-export async function syncScores(io) {
-  const { players: espnPlayers } = await fetchScores();
+export async function syncScores(io, date) {
+  const { players: espnPlayers } = await fetchScores(date);
   const storedPlayers = await getJSON('tournament:players');
   if (!storedPlayers) {
     console.log('[ESPN Sync] No stored players found, skipping score sync');
@@ -22,6 +22,8 @@ export async function syncScores(io) {
       espnIdToStored[sp.espnId] = sp;
     }
   }
+
+  const lockedSet = new Set(await getJSON('scores:locked') || []);
 
   let updated = 0;
   let skipped = 0;
@@ -40,9 +42,9 @@ export async function syncScores(io) {
       const dayKey = `day${day}`;
       const espnScore = ep.scores[dayKey];
       if (espnScore !== null) {
+        // Don't overwrite admin-locked scores
+        if (lockedSet.has(`${key}:${dayKey}`)) continue;
         const existing = await get(`scores:${key}:${dayKey}`);
-        // Don't overwrite admin-entered CUT/WD
-        if (existing === 'CUT' || existing === 'WD') continue;
         if (existing !== String(espnScore)) {
           await set(`scores:${key}:${dayKey}`, String(espnScore));
           updated++;
@@ -72,8 +74,8 @@ export async function syncScores(io) {
  * syncPlayers() - Fetch tournament data from ESPN and store players.
  * Returns the player list.
  */
-export async function syncPlayers() {
-  const tournament = await fetchTournament();
+export async function syncPlayers(date) {
+  const tournament = await fetchTournament(date);
 
   // Merge with existing players if any (preserve wcEligible flags)
   const existingPlayers = await getJSON('tournament:players') || [];
