@@ -322,18 +322,23 @@ async function renderAdmin(container) {
       const s = scores[p.name] || {};
       const cells = [1, 2, 3, 4].map((d) => {
         const val = s[`day${d}`] || '';
+        const thru = s[`day${d}Thru`];
         const isActive = d === currentDay;
+        const isInProgress = val && val !== 'CUT' && val !== 'WD' && thru && thru !== 'F' && thru !== '18';
+        const borderColor = isInProgress ? 'border-yellow-400 bg-yellow-50' : isActive ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white';
         return `<td class="p-1">
-          <input
-            type="text"
-            data-golfer="${p.name.replace(/"/g, '&quot;')}"
-            data-day="${d}"
-            value="${val}"
-            placeholder="${isActive ? '—' : ''}"
-            onblur="saveScoreCell(this)"
-            onkeydown="scoreGridKeydown(event, this)"
-            class="score-cell w-16 text-center border rounded px-1 py-0.5 text-sm font-mono ${isActive ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'} ${val === 'CUT' || val === 'WD' ? 'text-red-500' : ''}"
-          />
+          <div class="relative inline-block">
+            <input
+              type="text"
+              data-golfer="${p.name.replace(/"/g, '&quot;')}"
+              data-day="${d}"
+              value="${val}"
+              placeholder="${isActive ? '—' : ''}"
+              onblur="saveScoreCell(this)"
+              onkeydown="scoreGridKeydown(event, this)"
+              class="score-cell w-16 text-center border rounded px-1 py-0.5 text-sm font-mono ${borderColor} ${val === 'CUT' || val === 'WD' ? 'text-red-500' : ''}"
+            />${isInProgress ? `<span class="absolute -top-2 -right-2 text-[10px] bg-yellow-400 text-yellow-900 rounded-full px-1 font-bold leading-tight">${thru}</span>` : ''}
+          </div>
         </td>`;
       }).join('');
       const alreadyWD = s[`day${currentDay}`] === 'WD';
