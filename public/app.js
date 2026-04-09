@@ -313,7 +313,7 @@ async function renderAdmin(container) {
       return `<tr class="border-b border-gray-50">
         <td class="py-1 pr-3 text-sm font-medium text-gray-700 whitespace-nowrap">
           ${p.name}
-          ${alreadyWD ? '' : `<button onclick="markAsWD('${p.name.replace(/'/g, "\\'")}', ${currentDay})" class="ml-2 text-xs text-gray-400 hover:text-red-600 border border-gray-300 hover:border-red-400 rounded px-1 py-0.5 font-normal" title="Mark as Withdrawn">&#x2715;</button>`}
+          ${alreadyWD ? '' : `<button onclick="markAsWD('${p.name.replace(/'/g, "\\'")}', ${currentDay})" class="ml-2 text-xs text-gray-400 hover:text-red-600 border border-gray-300 hover:border-red-400 rounded px-1 py-0.5 font-normal" title="Mark as Withdrawn">WD &#x2715;</button>`}
         </td>
         ${cells}
       </tr>`;
