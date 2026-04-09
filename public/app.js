@@ -41,6 +41,14 @@ function sumPlayed(rounds, thrus) {
   return { total, played };
 }
 
+// Parse a rel string ("-4", "E", "+2") into a numeric diff. Returns null if unparseable.
+function parseRel(rel) {
+  if (!rel) return null;
+  if (rel === 'E') return 0;
+  const n = parseInt(rel, 10);
+  return isNaN(n) ? null : n;
+}
+
 // Format raw total relative to par across `played` rounds: e.g. "−4", "E", "+5"
 // Under-par values are wrapped in a red span (golf convention).
 function toParStr(total, played, par) {
@@ -48,6 +56,37 @@ function toParStr(total, played, par) {
   if (diff === 0) return 'E';
   if (diff > 0) return `+${diff}`;
   return `<span class="text-red-600">${diff}</span>`;
+}
+
+// Format a numeric diff as relative-to-par string with color.
+function diffToParStr(diff) {
+  if (diff === 0) return 'E';
+  if (diff > 0) return `+${diff}`;
+  return `<span class="text-red-600">${diff}</span>`;
+}
+
+// Sum all rounds (including in-progress) using ESPN rel values where available,
+// falling back to gross strokes minus par for completed rounds.
+function sumAllRelative(dayScores, dayThrus, dayRels, par) {
+  let diff = 0, count = 0;
+  for (let i = 0; i < dayScores.length; i++) {
+    const v = dayScores[i];
+    if (v === undefined || v === null || v === '' || v === 'CUT' || v === 'WD') continue;
+    const n = parseInt(v, 10);
+    if (isNaN(n)) continue;
+    // For any round with a rel value (in-progress or completed), use it
+    const rd = parseRel(dayRels[i]);
+    if (rd !== null) {
+      diff += rd;
+      count++;
+    } else if (!isRoundInProgress(dayThrus ? dayThrus[i] : null)) {
+      // Completed round without rel: compute from gross
+      diff += n - par;
+      count++;
+    }
+    // Skip in-progress rounds with no rel data — can't compute accurately
+  }
+  return { diff, count };
 }
 
 // Render a round score with thru info.
@@ -1148,14 +1187,14 @@ async function renderScoreboard(container) {
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
               const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
               const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { total, played } = sumPlayed(dayScores, dayThrus);
+              const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, tournament?.par || 72);
               return `<tr>
                 <td class="font-medium">
                   ${g}
                   ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                 </td>
                 ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '<span class="text-gray-300">—</span>'}</td>
+                <td class="font-semibold">${count ? diffToParStr(diff) : '<span class="text-gray-300">—</span>'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1182,11 +1221,11 @@ async function renderScoreboard(container) {
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
               const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
               const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { total, played } = sumPlayed(dayScores, dayThrus);
+              const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, tournament?.par || 72);
               return `<tr>
                 <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
                 ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '—'}</td>
+                <td class="font-semibold">${count ? diffToParStr(diff) : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>
