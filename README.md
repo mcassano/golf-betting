@@ -50,7 +50,7 @@ The app runs at [http://localhost:3000](http://localhost:3000).
 
 ## Patron Mode
 
-A read-only "Patron" login is available in the driver dropdown. Patron uses its own PIN (default `8912`) and can only view the Scoreboard — no admin, draft, or team access.
+A read-only "Patron" login is available in the driver dropdown. Patron uses its own PIN (default `8912`) and can view the Scoreboard and Bets pages — no admin, draft, or team access.
 
 ## Reader API
 

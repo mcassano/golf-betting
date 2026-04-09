@@ -85,13 +85,16 @@ function renderNav() {
   el('nav-tournament-name').textContent = state.tournament?.name || 'Golf Betting';
 
   if (state.role === 'patron') {
-    el('nav-links').innerHTML = `<button onclick="navigate('scoreboard')" class="nav-link active">Scoreboard</button>`;
+    el('nav-links').innerHTML = `
+      <button onclick="navigate('bets')" class="nav-link ${state.view === 'bets' ? 'active' : ''}">Bets</button>
+      <button onclick="navigate('scoreboard')" class="nav-link ${state.view === 'scoreboard' ? 'active' : ''}">Scoreboard</button>`;
     return;
   }
 
   const status = state.tournament?.status;
   const links = [
     { view: 'admin', label: 'Admin', always: true },
+    { view: 'bets', label: 'Bets', always: true },
     { view: 'draft', label: 'Draft', show: ['drafting', 'wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'] },
     { view: 'myTeam', label: 'My Team', show: ['wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'] },
     { view: 'leaderboard', label: 'Leaderboard', show: ['day1', 'day2', 'day3', 'day4', 'complete'] },
@@ -107,10 +110,10 @@ function renderNav() {
 // ── Main render ───────────────────────────────────────────────────────────────
 
 function renderApp() {
-  if (state.role === 'patron' && state.view !== 'login') state.view = 'scoreboard';
+  if (state.role === 'patron' && !['login', 'scoreboard', 'bets'].includes(state.view)) state.view = 'scoreboard';
   renderNav();
   const app = el('app');
-  const views = { login: renderLogin, admin: renderAdmin, draft: renderDraft, myTeam: renderMyTeam, leaderboard: renderLeaderboard, scoreboard: renderScoreboard };
+  const views = { login: renderLogin, admin: renderAdmin, bets: renderBets, draft: renderDraft, myTeam: renderMyTeam, leaderboard: renderLeaderboard, scoreboard: renderScoreboard };
   const renderer = views[state.view] || renderLogin;
   renderer(app);
 }
@@ -619,14 +622,146 @@ window.pickGolfer = async function(golfer) {
   navigate('draft');
 };
 
+// ── View: Bets ───────────────────────────────────────────────────────────────
+
+async function renderBets(container) {
+  const [players, teams, wcData, mcData] = await Promise.all([
+    api('GET', '/players'),
+    api('GET', '/teams'),
+    api('GET', '/wc'),
+    api('GET', '/missedcut').catch(() => ({})),
+  ]);
+
+  const ownership = {};
+  Object.entries(teams).forEach(([player, golfers]) => {
+    (golfers || []).forEach((g) => (ownership[g] = player));
+  });
+
+  let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Bets &amp; Rules</h2>`;
+
+  // Day 1 & 2
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">Days 1 &amp; 2 — Best 6</div>
+    <p class="text-sm text-gray-700 mb-2">Each player's <strong>best 6 drafted golfers</strong> count toward their daily score. If any team has a withdrawal, all teams drop to best-of (6 minus max WDs) to keep it fair.</p>
+    <div class="text-sm text-gray-600">
+      <p><strong>Payout:</strong> Winner collects $5 from each loser (+$10 total).</p>
+    </div>
+  </div>`;
+
+  // Day 3 & 4
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">Days 3 &amp; 4 — Best 2</div>
+    <p class="text-sm text-gray-700 mb-2">Only each player's <strong>best 2 drafted golfers</strong> count. No WD adjustment on these days.</p>
+    <div class="text-sm text-gray-600">
+      <p><strong>Payout:</strong> Same as Days 1 &amp; 2 — winner collects $5 from each loser.</p>
+    </div>
+  </div>`;
+
+  // Overall
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">Overall — Best 2 Cumulative</div>
+    <p class="text-sm text-gray-700 mb-2">Best 2 golfers by <strong>cumulative 4-day total</strong> (8 rounds per team).</p>
+    <div class="text-sm text-gray-600">
+      <p><strong>Payout:</strong> Winner collects $5 from each loser.</p>
+    </div>
+  </div>`;
+
+  // Ties
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">Tie Rules</div>
+    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+      <li><strong>2-way tie:</strong> Both winners collect $5 from the loser.</li>
+      <li><strong>3-way tie:</strong> No payout.</li>
+    </ul>
+  </div>`;
+
+  // WC Daily
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">🎰 Wild Card — Daily Side Bet</div>
+    <p class="text-sm text-gray-700 mb-2">Each day, all 21 selected golfers (18 drafted + 3 WC) are compared. If a WC golfer posts the <strong>sole lowest round</strong>, their owner collects $5 from each opponent.</p>
+    <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+      <li>If multiple WC golfers tie at the low, they split the winnings.</li>
+      <li>If <em>any</em> drafted golfer ties at the low with a WC golfer, the WC payout is <strong>voided</strong>.</li>
+    </ul>
+  </div>`;
+
+  // WC Tournament
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">🎰 Wild Card — Tournament Bet</div>
+    <p class="text-sm text-gray-700 mb-2">If your WC golfer <strong>wins the tournament outright</strong>, you collect <strong>$20 from each other player</strong>.</p>
+    <div class="text-sm text-gray-600">
+      ${Object.entries(wcData).map(([player, golfer]) =>
+        `<p>${player}: <strong>${golfer || 'TBD'}</strong></p>`
+      ).join('')}
+    </div>
+  </div>`;
+
+  // Missed Cut Side Bet
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">🎲 Missed Cut Side Bet</div>
+    <p class="text-sm text-gray-700 mb-2">Each player picked one golfer they think will miss the cut.</p>
+    <div class="text-sm text-gray-600">
+      ${Object.entries(mcData).map(([player, golfer]) =>
+        `<p>${player}: <strong>${golfer}</strong></p>`
+      ).join('')}
+    </div>
+  </div>`;
+
+  // CUT / WD
+  html += `
+  <div class="card mb-4">
+    <div class="section-title">CUT &amp; Withdrawal Scoring</div>
+    <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
+      <li><strong>Missed Cut (CUT):</strong> 99-stroke penalty per remaining day.</li>
+      <li><strong>Withdrawal (WD):</strong> Excluded from scoring entirely. Days 1–2 adjust best-N down for all teams.</li>
+    </ul>
+  </div>`;
+
+  // Field list
+  if (players && players.length > 0) {
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">Tournament Field (${players.length} Golfers)</div>
+      <input type="text" id="field-search" placeholder="Search golfers…" oninput="filterField()" class="mb-3" />
+      <div id="field-list" class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1">
+        ${players.map((p) => {
+          const owner = ownership[p.name];
+          const wcOwner = Object.entries(wcData).find(([, g]) => g === p.name);
+          return `<div class="field-item flex items-center justify-between py-1 text-sm border-b border-gray-50">
+            <span class="font-medium">${p.name}${p.wcEligible ? ' <span class="badge badge-wc text-[10px]">WC</span>' : ''}</span>
+            <span class="text-xs text-gray-400">${owner ? owner : ''}${wcOwner ? ` <span class="badge badge-wc text-[10px]">${wcOwner[0]}'s WC</span>` : ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+window.filterField = function() {
+  const q = el('field-search').value.toLowerCase();
+  document.querySelectorAll('#field-list .field-item').forEach((item) => {
+    item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+};
+
 // ── View: My Team ─────────────────────────────────────────────────────────────
 
 async function renderMyTeam(container) {
-  const [team, wcData, tournament, wcEligible] = await Promise.all([
+  const [team, wcData, tournament, wcEligible, mcData] = await Promise.all([
     api('GET', `/teams/${state.user}`),
     api('GET', '/wc'),
     api('GET', '/tournament'),
     api('GET', '/wc/eligible'),
+    api('GET', '/missedcut').catch(() => ({})),
   ]);
 
   const myWC = wcData[state.user];
@@ -657,6 +792,7 @@ async function renderMyTeam(container) {
         <p class="text-sm text-gray-500">If ${myWC} wins the tournament, you collect $20 from each other player.</p>
       </div>`;
     } else {
+      const takenWC = new Set(Object.values(wcData).filter(Boolean));
       html += `
       <div class="card mb-4">
         <div class="section-title">Pick Your Wild Card</div>
@@ -665,11 +801,19 @@ async function renderMyTeam(container) {
         <div id="wc-list" class="max-h-64 overflow-y-auto">
           ${wcEligible.length === 0
             ? '<p class="text-gray-400 text-sm">No WC eligible golfers (admin needs to mark them).</p>'
-            : wcEligible.map((g) => `
-              <div class="golfer-item" onclick="pickWC('${g.name.replace(/'/g, "\\'")}')">
+            : wcEligible.map((g) => {
+              const takenBy = Object.entries(wcData).find(([, v]) => v === g.name);
+              if (takenBy) {
+                return `<div class="golfer-item disabled opacity-50 pointer-events-none">
+                  <span>${g.name}</span>
+                  <span class="text-xs text-gray-400">Picked by ${takenBy[0]}</span>
+                </div>`;
+              }
+              return `<div class="golfer-item" onclick="pickWC('${g.name.replace(/'/g, "\\'")}')">
                 <span>${g.name}</span>
                 <span class="badge badge-wc">WC eligible</span>
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
         </div>
       </div>`;
     }
@@ -687,7 +831,7 @@ async function renderMyTeam(container) {
 
   // Other teams WC status
   html += `
-  <div class="card">
+  <div class="card mb-4">
     <div class="section-title">All Wild Card Picks</div>
     ${Object.entries(wcData).map(([player, wc]) => `
       <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
@@ -695,6 +839,19 @@ async function renderMyTeam(container) {
         ${wc ? `<span class="text-sm text-gray-700">${wc} <span class="badge badge-wc">WC</span></span>` : `<span class="text-sm text-gray-400 italic">Not yet selected</span>`}
       </div>`).join('')}
   </div>`;
+
+  // Missed cut bet
+  if (Object.keys(mcData).length > 0) {
+    html += `
+    <div class="card">
+      <div class="section-title">🎲 Missed Cut Bet</div>
+      ${Object.entries(mcData).map(([player, golfer]) => `
+        <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
+          <span class="text-sm font-medium ${player === state.user ? 'text-green-700' : ''}">${player}</span>
+          <span class="text-sm text-gray-700">${golfer} <span class="badge badge-mc">MC</span></span>
+        </div>`).join('')}
+    </div>`;
+  }
 
   container.innerHTML = html;
 }
@@ -717,10 +874,12 @@ window.pickWC = async function(golfer) {
 // ── View: Leaderboard ─────────────────────────────────────────────────────────
 
 async function renderLeaderboard(container) {
-  const [lb, users, tournament] = await Promise.all([
+  const [lb, users, tournament, mcData, scores] = await Promise.all([
     api('GET', '/leaderboard'),
     api('GET', '/users'),
     api('GET', '/tournament'),
+    api('GET', '/missedcut').catch(() => ({})),
+    api('GET', '/scores'),
   ]);
 
   let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Leaderboard</h2>`;
@@ -798,6 +957,25 @@ async function renderLeaderboard(container) {
               🏆 ${wc.wcWinners.join(' & ')} wins the WC bonus! (+$${wc.wcWinners.length > 0 ? 40 / wc.wcWinners.length * wc.wcWinners.length : 40} per winner)
             </div>` : `<p class="text-sm text-gray-500 mt-1">No WC winner this tournament.</p>`}
         </div>` : `<p class="text-sm text-gray-400 mt-3 italic">WC result revealed when tournament is complete.</p>`}
+    </div>`;
+  }
+
+  // Missed cut bet
+  if (Object.keys(mcData).length > 0) {
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">🎲 Missed Cut Side Bet</div>
+      ${Object.entries(mcData).map(([player, golfer]) => {
+        const golferScores = scores[golfer] || {};
+        const isCut = Object.values(golferScores).some((v) => v === 'CUT');
+        const statusBadge = isCut
+          ? '<span class="badge badge-cut">CUT</span>'
+          : '<span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0">Active</span>';
+        return `<div class="flex items-center justify-between py-1.5 border-b border-gray-50">
+          <span class="text-sm font-medium">${player}</span>
+          <span class="text-sm text-gray-700">${golfer} ${statusBadge}</span>
+        </div>`;
+      }).join('')}
     </div>`;
   }
 
@@ -901,11 +1079,12 @@ function computePayoutSummary(lb, users) {
 // ── View: Scoreboard ──────────────────────────────────────────────────────────
 
 async function renderScoreboard(container) {
-  const [scores, teams, wcData, tournament] = await Promise.all([
+  const [scores, teams, wcData, tournament, mcData] = await Promise.all([
     api('GET', '/scores'),
     api('GET', '/teams'),
     api('GET', '/wc'),
     api('GET', '/tournament'),
+    api('GET', '/missedcut').catch(() => ({})),
   ]);
 
   // Build ownership map
@@ -952,6 +1131,7 @@ async function renderScoreboard(container) {
         </table>
       </div>
       ${wcData[user] ? `<p class="text-xs text-amber-600 mt-2">🎰 WC Pick: ${wcData[user]}</p>` : ''}
+      ${mcData[user] ? `<p class="text-xs text-purple-600 mt-1">🎲 MC Bet: ${mcData[user]}</p>` : ''}
     </div>`;
   }
 

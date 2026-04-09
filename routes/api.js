@@ -308,30 +308,44 @@ router.post('/wc/pick', requireUser, requireStatus('wc_selection'), async (req, 
   const { golfer } = req.body;
   if (!golfer) return res.status(400).json({ error: 'golfer required' });
 
-  const allGolfers = await getJSON('tournament:players') || [];
-  const golferObj = allGolfers.find((g) => g.name === golfer);
-  if (!golferObj || !golferObj.wcEligible) {
-    return res.status(400).json({ error: 'Golfer not WC eligible' });
-  }
-  const myTeam = await getJSON(`teams:${player}`) || [];
-  if (myTeam.includes(golfer)) {
-    return res.status(400).json({ error: 'Cannot pick your own draft pick as WC' });
-  }
+  try {
+    await withLock('lock:wc:pick', 5000, async () => {
+      const allGolfers = await getJSON('tournament:players') || [];
+      const golferObj = allGolfers.find((g) => g.name === golfer);
+      if (!golferObj || !golferObj.wcEligible) {
+        const e = new Error('Golfer not WC eligible'); e.status = 400; throw e;
+      }
+      const myTeam = await getJSON(`teams:${player}`) || [];
+      if (myTeam.includes(golfer)) {
+        const e = new Error('Cannot pick your own draft pick as WC'); e.status = 400; throw e;
+      }
 
-  await set(`wc:${player}`, golfer);
-  emit('wc:picked', { player, golfer });
+      // Prevent duplicate WC picks
+      const users = await getJSON('users') || [];
+      for (const u of users) {
+        if (u === player) continue;
+        const existing = await get(`wc:${u}`);
+        if (existing === golfer) {
+          const e = new Error(`${golfer} is already picked as a Wild Card by ${u}`); e.status = 409; throw e;
+        }
+      }
 
-  // Check if all users have WC picks — advance to day1
-  const users = await getJSON('users') || [];
-  const allPicked = await Promise.all(users.map((u) => get(`wc:${u}`)));
-  if (allPicked.every((w) => w !== null)) {
-    const meta = req.tournamentMeta;
-    meta.status = 'day1';
-    await setJSON('tournament:meta', meta);
-    emit('tournament:advanced', { status: 'day1' });
+      await set(`wc:${player}`, golfer);
+      emit('wc:picked', { player, golfer });
+
+      // Check if all users have WC picks — advance to day1
+      const allPicked = await Promise.all(users.map((u) => get(`wc:${u}`)));
+      if (allPicked.every((w) => w !== null)) {
+        const meta = req.tournamentMeta;
+        meta.status = 'day1';
+        await setJSON('tournament:meta', meta);
+        emit('tournament:advanced', { status: 'day1' });
+      }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 409).json({ error: e.message });
   }
-
-  res.json({ ok: true });
 });
 
 // ── Scores ────────────────────────────────────────────────────────────────────
@@ -477,6 +491,20 @@ router.get('/admin/espn/status', requireUser, async (req, res) => {
     lastEspnSync: meta?.lastEspnSync || null,
     espnEventId: meta?.espnEventId || null,
   });
+});
+
+// ── Missed Cut Bet ───────────────────────────────────────────────────────────
+
+router.get('/missedcut', async (req, res) => {
+  const picks = await getJSON('missedcut:picks');
+  res.json(picks || {});
+});
+
+router.post('/admin/missedcut', requireUser, async (req, res) => {
+  const { picks } = req.body;
+  if (!picks || typeof picks !== 'object') return res.status(400).json({ error: 'picks object required' });
+  await setJSON('missedcut:picks', picks);
+  res.json({ ok: true });
 });
 
 // ── Reader API ───────────────────────────────────────────────────────────────
