@@ -48,6 +48,20 @@ npm start
 
 The app runs at [http://localhost:3000](http://localhost:3000).
 
+## Patron Mode
+
+A read-only "Patron" login is available in the driver dropdown. Patron uses its own PIN (default `8912`) and can only view the Scoreboard — no admin, draft, or team access.
+
+## Reader API
+
+External consumers can fetch the leaderboard via:
+
+```
+GET /api/reader/leaderboard?pin=1829
+```
+
+Returns tournament name, status, and full leaderboard data as JSON.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -56,6 +70,8 @@ The app runs at [http://localhost:3000](http://localhost:3000).
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `COOKIE_SECRET` | `golf-dev-secret-change-me` | Signed cookie secret (set in production!) |
 | `GOLF_USERS` | `Mike,Caleb,Marshall` | Comma-separated list of player names |
+| `PATRON_PIN` | `8912` | PIN for Patron (view-only) login |
+| `READER_PIN` | `1829` | PIN for the reader API |
 
 ## Development
 

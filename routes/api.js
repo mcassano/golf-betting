@@ -43,11 +43,29 @@ router.get('/health', (req, res) => res.json({ ok: true }));
 
 router.get('/session', (req, res) => {
   const name = getUser(req);
-  res.json({ name });
+  const role = name === 'Patron' ? 'patron' : name ? 'user' : null;
+  res.json({ name, role });
 });
 
 router.post('/session', async (req, res) => {
   const { name, pin } = req.body;
+
+  // Patron — view-only role with its own PIN
+  if (name === 'Patron') {
+    const patronPin = process.env.PATRON_PIN || '8912';
+    if (!pin || pin !== patronPin) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+    res.cookie('user', 'Patron', {
+      signed: true,
+      httpOnly: true,
+      maxAge: 7 * 24 * 3600 * 1000,
+      sameSite: 'lax',
+    });
+    return res.json({ name: 'Patron', role: 'patron' });
+  }
+
   const users = await getJSON('users');
   if (!users || !users.includes(name)) {
     return res.status(400).json({ error: 'Unknown user' });
@@ -63,7 +81,7 @@ router.post('/session', async (req, res) => {
     maxAge: 7 * 24 * 3600 * 1000,
     sameSite: 'lax',
   });
-  res.json({ name });
+  res.json({ name, role: 'user' });
 });
 
 router.post('/session/logout', (req, res) => {
@@ -446,6 +464,26 @@ router.get('/admin/espn/status', requireUser, async (req, res) => {
     ...status,
     lastEspnSync: meta?.lastEspnSync || null,
     espnEventId: meta?.espnEventId || null,
+  });
+});
+
+// ── Reader API ───────────────────────────────────────────────────────────────
+
+function requireReaderPin(req, res, next) {
+  if (req.query.pin !== (process.env.READER_PIN || '1829')) {
+    return res.status(401).json({ error: 'Invalid pin' });
+  }
+  next();
+}
+
+router.get('/reader/leaderboard', requireReaderPin, async (req, res) => {
+  const users = await getJSON('users') || [];
+  const meta = await getJSON('tournament:meta');
+  const leaderboard = await computeLeaderboard(users, meta);
+  res.json({
+    tournament: meta?.name || null,
+    status: meta?.status || null,
+    leaderboard,
   });
 });
 

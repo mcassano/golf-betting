@@ -2,6 +2,7 @@
 
 const state = {
   user: null,
+  role: null,
   tournament: null,
   view: 'login',
 };
@@ -83,6 +84,11 @@ function renderNav() {
   el('nav-user').textContent = state.user;
   el('nav-tournament-name').textContent = state.tournament?.name || 'Golf Betting';
 
+  if (state.role === 'patron') {
+    el('nav-links').innerHTML = `<button onclick="navigate('scoreboard')" class="nav-link active">Scoreboard</button>`;
+    return;
+  }
+
   const status = state.tournament?.status;
   const links = [
     { view: 'admin', label: 'Admin', always: true },
@@ -101,6 +107,7 @@ function renderNav() {
 // ── Main render ───────────────────────────────────────────────────────────────
 
 function renderApp() {
+  if (state.role === 'patron' && state.view !== 'login') state.view = 'scoreboard';
   renderNav();
   const app = el('app');
   const views = { login: renderLogin, admin: renderAdmin, draft: renderDraft, myTeam: renderMyTeam, leaderboard: renderLeaderboard, scoreboard: renderScoreboard };
@@ -155,7 +162,8 @@ function renderLogin(container) {
     }
     el('driver-select').innerHTML =
       '<option value="">— Select Driver —</option>' +
-      users.map((u) => `<option value="${u}">${u}</option>`).join('');
+      users.map((u) => `<option value="${u}">${u}</option>`).join('') +
+      '<option value="Patron">Patron</option>';
   }).catch(() => {
     el('driver-select').innerHTML = '<option value="">Error loading drivers</option>';
   });
@@ -201,12 +209,13 @@ window.login = async function(name) {
     return;
   }
   try {
-    await api('POST', '/session', { name, pin });
-    state.user = name;
+    const resp = await api('POST', '/session', { name, pin });
+    state.user = resp.name;
+    state.role = resp.role || 'user';
     state.tournament = await api('GET', '/tournament');
     document.title = state.tournament?.name || 'Golf Betting';
     setupSocket();
-    navigate(routeFromStatus(state.tournament?.status));
+    navigate(state.role === 'patron' ? 'scoreboard' : routeFromStatus(state.tournament?.status));
   } catch (e) {
     const err = el('pin-error');
     err.textContent = e.message || 'Invalid PIN';
@@ -219,6 +228,7 @@ window.login = async function(name) {
 window.logout = async function() {
   await api('POST', '/session/logout');
   state.user = null;
+  state.role = null;
   state.tournament = null;
   document.title = 'HP LaserJet Pro M404n';
   if (socket) { socket.disconnect(); socket = null; }
@@ -303,7 +313,7 @@ async function renderAdmin(container) {
       return `<tr class="border-b border-gray-50">
         <td class="py-1 pr-3 text-sm font-medium text-gray-700 whitespace-nowrap">
           ${p.name}
-          ${alreadyWD ? '' : `<button onclick="markAsWD('${p.name.replace(/'/g, "\\'")}', ${currentDay})" class="ml-2 text-xs text-red-400 hover:text-red-600 hover:underline font-normal">WD</button>`}
+          ${alreadyWD ? '' : `<button onclick="markAsWD('${p.name.replace(/'/g, "\\'")}', ${currentDay})" class="ml-2 text-xs text-gray-400 hover:text-red-600 border border-gray-300 hover:border-red-400 rounded px-1 py-0.5 font-normal" title="Mark as Withdrawn">&#x2715;</button>`}
         </td>
         ${cells}
       </tr>`;
@@ -1051,10 +1061,11 @@ async function init() {
     const session = await api('GET', '/session');
     if (session.name) {
       state.user = session.name;
+      state.role = session.role || 'user';
       state.tournament = await api('GET', '/tournament');
       document.title = state.tournament?.name || 'Golf Betting';
       setupSocket();
-      navigate(routeFromStatus(state.tournament?.status));
+      navigate(state.role === 'patron' ? 'scoreboard' : routeFromStatus(state.tournament?.status));
     } else {
       navigate('login');
     }
