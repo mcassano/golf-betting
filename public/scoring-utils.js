@@ -1,6 +1,5 @@
 // Shared scoring utilities — used by the client (app.js) and tested by vitest.
-// In the browser these are loaded via <script> and land on `window`.
-// In Node/vitest they are imported as an ES module.
+// Loaded as an ES module in both browser (<script type="module">) and Node/vitest.
 
 export function isRoundInProgress(thru) {
   return !!thru && thru !== 'F' && thru !== '18';
