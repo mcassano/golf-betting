@@ -1,4 +1,4 @@
-import { get, getJSON } from './redis.js';
+import { get, mget, getJSON } from './redis.js';
 import {
   teamScoreForDay,
   teamScoreBest2ForDay,
@@ -52,14 +52,21 @@ export async function computeLeaderboard(users, meta) {
 
     if (useAll6) {
       // Days 1 & 2: compute bestN based on max WDs across all teams
-      const teamRawScores = {};
+      const teamGolfers = {};
+      const allKeys = [];
       for (const user of users) {
         const golfers = await getJSON(`teams:${user}`) || [];
-        const rawScores = [];
+        teamGolfers[user] = golfers;
         for (const golfer of golfers) {
-          rawScores.push(await get(`scores:${encodeKey(golfer)}:day${n}`));
+          allKeys.push(`scores:${encodeKey(golfer)}:day${n}`);
         }
-        teamRawScores[user] = rawScores;
+      }
+      const allValues = allKeys.length ? await mget(...allKeys) : [];
+      const teamRawScores = {};
+      let vi = 0;
+      for (const user of users) {
+        teamRawScores[user] = allValues.slice(vi, vi + teamGolfers[user].length);
+        vi += teamGolfers[user].length;
       }
       const maxWDs = countMaxWDs(teamRawScores);
       const bestN = 6 - maxWDs;

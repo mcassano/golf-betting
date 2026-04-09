@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { get, set, getJSON, setJSON, keys, del, withLock } from '../services/redis.js';
+import { get, mget, set, getJSON, setJSON, keys, del, withLock } from '../services/redis.js';
 import { shuffle, buildPickOrder, getCurrentPlayer, buildTeams } from '../services/draft.js';
 import { computeLeaderboard } from '../services/betting.js';
 import { encodeKey } from '../services/scoring.js';
@@ -338,12 +338,24 @@ router.post('/wc/pick', requireUser, requireStatus('wc_selection'), async (req, 
 
 router.get('/scores', async (req, res) => {
   const allGolfers = await getJSON('tournament:players') || [];
-  const result = {};
+  if (!allGolfers.length) return res.json({});
+
+  // Build all keys upfront, fetch in one MGET call
+  const redisKeys = [];
   for (const g of allGolfers) {
     const key = encodeKey(g.name);
+    for (let day = 1; day <= 4; day++) {
+      redisKeys.push(`scores:${key}:day${day}`);
+    }
+  }
+  const values = await mget(...redisKeys);
+
+  const result = {};
+  let i = 0;
+  for (const g of allGolfers) {
     result[g.name] = {};
     for (let day = 1; day <= 4; day++) {
-      result[g.name][`day${day}`] = await get(`scores:${key}:day${day}`);
+      result[g.name][`day${day}`] = values[i++];
     }
   }
   res.json(result);

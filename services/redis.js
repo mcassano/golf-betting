@@ -12,6 +12,7 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
 redis.on('error', (err) => console.error('Redis error:', err));
 
 export const get = (key) => redis.get(key);
+export const mget = (...keys) => redis.mget(...keys);
 export const set = (key, value) => redis.set(key, String(value));
 export const del = (...keys) => redis.del(...keys);
 export const keys = (pattern) => redis.keys(pattern);

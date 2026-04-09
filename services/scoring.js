@@ -1,4 +1,4 @@
-import { get, getJSON } from './redis.js';
+import { get, mget, getJSON } from './redis.js';
 
 const PENALTY = 99;
 
@@ -46,10 +46,8 @@ export function bestNScore(rawScores, bestN) {
 export async function teamScoreForDay(player, dayN, bestN = 6) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
-  const rawScores = [];
-  for (const golfer of golfers) {
-    rawScores.push(await get(`scores:${encodeKey(golfer)}:day${dayN}`));
-  }
+  const keys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
+  const rawScores = await mget(...keys);
   return bestNScore(rawScores, bestN);
 }
 
@@ -57,10 +55,11 @@ export async function teamScoreForDay(player, dayN, bestN = 6) {
 export async function teamScoreBest2ForDay(player, dayN) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
+  const keys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
+  const rawValues = await mget(...keys);
   const scores = [];
   let partial = false;
-  for (const golfer of golfers) {
-    const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
+  for (const raw of rawValues) {
     const score = resolveScore(raw);
     if (score === null) {
       if (!isWD(raw)) partial = true;
@@ -77,12 +76,22 @@ export async function teamScoreBest2ForDay(player, dayN) {
 export async function teamOverallScore(player) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
+
+  // Fetch all 4 days for all golfers in one MGET
+  const keys = [];
+  for (const golfer of golfers) {
+    const k = encodeKey(golfer);
+    for (let day = 1; day <= 4; day++) keys.push(`scores:${k}:day${day}`);
+  }
+  const values = await mget(...keys);
+
   const cumulative = [];
   let partial = false;
+  let i = 0;
   for (const golfer of golfers) {
     let cum = 0;
     for (let day = 1; day <= 4; day++) {
-      const raw = await get(`scores:${encodeKey(golfer)}:day${day}`);
+      const raw = values[i++];
       const score = resolveScore(raw);
       if (score === null) {
         if (!isWD(raw)) partial = true;
@@ -106,11 +115,21 @@ export async function teamOverallScore(player) {
 export async function allGolfersCumulative() {
   const allGolfers = await getJSON('tournament:players');
   if (!allGolfers) return {};
+
+  // Fetch all scores in one MGET
+  const keys = [];
+  for (const g of allGolfers) {
+    const k = encodeKey(g.name);
+    for (let day = 1; day <= 4; day++) keys.push(`scores:${k}:day${day}`);
+  }
+  const values = await mget(...keys);
+
   const result = {};
+  let i = 0;
   for (const g of allGolfers) {
     let cum = 0;
     for (let day = 1; day <= 4; day++) {
-      const raw = await get(`scores:${encodeKey(g.name)}:day${day}`);
+      const raw = values[i++];
       const score = resolveScore(raw);
       cum += score === null ? PENALTY : score;
     }
@@ -134,24 +153,37 @@ export function countMaxWDs(teams) {
 // WD golfers are excluded (resolveScore returns null for WD).
 // Returns { entries, expected } so callers can detect incomplete data.
 export async function allSelectedScoresForDay(users, dayN) {
+  // Gather teams and WC picks
+  const teams = {};
+  const wcPicks = {};
+  for (const user of users) {
+    teams[user] = await getJSON(`teams:${user}`) || [];
+    wcPicks[user] = await get(`wc:${user}`);
+  }
+
+  // Build all score keys and fetch in one MGET
+  const lookups = []; // { user, golfer, isWC }
+  const scoreKeys = [];
+  for (const user of users) {
+    for (const golfer of teams[user]) {
+      lookups.push({ user, golfer, isWC: false });
+      scoreKeys.push(`scores:${encodeKey(golfer)}:day${dayN}`);
+    }
+    if (wcPicks[user]) {
+      lookups.push({ user, golfer: wcPicks[user], isWC: true });
+      scoreKeys.push(`scores:${encodeKey(wcPicks[user])}:day${dayN}`);
+    }
+  }
+
+  const values = scoreKeys.length ? await mget(...scoreKeys) : [];
   const entries = [];
   let expected = 0;
-
-  for (const user of users) {
-    const golfers = await getJSON(`teams:${user}`) || [];
-    for (const golfer of golfers) {
-      const raw = await get(`scores:${encodeKey(golfer)}:day${dayN}`);
-      if (!isWD(raw)) expected++;
-      const score = resolveScore(raw);
-      if (score !== null) entries.push({ golfer, score, owner: user, isWC: false });
-    }
-
-    const wc = await get(`wc:${user}`);
-    if (wc) {
-      const raw = await get(`scores:${encodeKey(wc)}:day${dayN}`);
-      if (!isWD(raw)) expected++;
-      const score = resolveScore(raw);
-      if (score !== null) entries.push({ golfer: wc, score, owner: user, isWC: true });
+  for (let i = 0; i < lookups.length; i++) {
+    const raw = values[i];
+    if (!isWD(raw)) expected++;
+    const score = resolveScore(raw);
+    if (score !== null) {
+      entries.push({ golfer: lookups[i].golfer, score, owner: lookups[i].user, isWC: lookups[i].isWC });
     }
   }
 

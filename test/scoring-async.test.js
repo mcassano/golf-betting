@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const store = {};
 vi.mock('../services/redis.js', () => ({
   get: vi.fn((key) => Promise.resolve(store[key] ?? null)),
+  mget: vi.fn((...keys) => Promise.resolve(keys.map((k) => store[k] ?? null))),
   getJSON: vi.fn((key) => Promise.resolve(store[key] ?? null)),
   set: vi.fn((key, val) => { store[key] = val; return Promise.resolve(); }),
   setJSON: vi.fn((key, val) => { store[key] = val; return Promise.resolve(); }),
