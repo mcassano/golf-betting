@@ -41,21 +41,6 @@ function sumPlayed(rounds, thrus) {
   return { total, played };
 }
 
-// Like sumPlayed but includes in-progress rounds. Returns hasInProgress flag.
-function sumAll(rounds, thrus) {
-  let total = 0, played = 0, hasInProgress = false;
-  for (let i = 0; i < rounds.length; i++) {
-    const v = rounds[i];
-    if (v === undefined || v === null || v === '' || v === 'CUT' || v === 'WD') continue;
-    const n = parseInt(v, 10);
-    if (isNaN(n)) continue;
-    if (isRoundInProgress(thrus ? thrus[i] : null)) hasInProgress = true;
-    total += n;
-    played++;
-  }
-  return { total, played, hasInProgress };
-}
-
 // Format raw total relative to par across `played` rounds: e.g. "−4", "E", "+5"
 // Under-par values are wrapped in a red span (golf convention).
 function toParStr(total, played, par) {
@@ -1163,14 +1148,14 @@ async function renderScoreboard(container) {
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
               const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
               const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { total, played, hasInProgress } = sumAll(dayScores, dayThrus);
+              const { total, played } = sumPlayed(dayScores, dayThrus);
               return `<tr>
                 <td class="font-medium">
                   ${g}
                   ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                 </td>
                 ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '<span class="text-gray-300">—</span>'}${hasInProgress ? '<span class="text-yellow-500 text-xs align-super">*</span>' : ''}</td>
+                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '<span class="text-gray-300">—</span>'}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1197,11 +1182,11 @@ async function renderScoreboard(container) {
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
               const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
               const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { total, played, hasInProgress } = sumAll(dayScores, dayThrus);
+              const { total, played } = sumPlayed(dayScores, dayThrus);
               return `<tr>
                 <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
                 ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '—'}${hasInProgress ? '<span class="text-yellow-500 text-xs align-super">*</span>' : ''}</td>
+                <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '—'}</td>
               </tr>`;
             }).join('')}
           </tbody>
