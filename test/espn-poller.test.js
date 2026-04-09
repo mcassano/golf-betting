@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const store = {};
 vi.mock('../services/redis.js', () => ({
   get: vi.fn((key) => Promise.resolve(store[key] ?? null)),
+  mget: vi.fn((...keys) => Promise.resolve(keys.map((k) => store[k] ?? null))),
   getJSON: vi.fn((key) => Promise.resolve(store[key] ?? null)),
   set: vi.fn((key, val) => { store[key] = val; return Promise.resolve(); }),
   setJSON: vi.fn((key, val) => { store[key] = val; return Promise.resolve(); }),
@@ -21,7 +22,7 @@ vi.mock('../services/espn-sync.js', () => ({
 
 // Since currentDayComplete is not exported, we test the logic directly
 // by reimplementing and verifying the algorithm matches.
-import { encodeKey } from '../services/scoring.js';
+import { encodeKey, isInProgress } from '../services/scoring.js';
 
 function clearStore() {
   for (const key of Object.keys(store)) delete store[key];
@@ -50,8 +51,15 @@ async function currentDayComplete(day) {
     if (eliminated) continue;
     const v = store[`scores:${key}:${day}`] ?? null;
     if (v === null || v === undefined) return false;
+    const thru = store[`scores:${key}:${day}:thru`] ?? null;
+    if (isInProgress(v, thru)) return false;
   }
   return true;
+}
+
+function setThru(golfer, day, thru) {
+  const key = encodeKey(golfer);
+  store[`scores:${key}:day${day}:thru`] = thru;
 }
 
 // ── currentDayComplete (bug 1 fix) ───────────────────────────────────────────
@@ -133,6 +141,47 @@ describe('currentDayComplete', () => {
   it('returns false when no players exist', async () => {
     store['tournament:players'] = [];
     expect(await currentDayComplete('day1')).toBe(false);
+  });
+
+  it('returns false when player has score but thru is not F (in-progress)', async () => {
+    store['tournament:players'] = [{ name: 'Tiger' }, { name: 'Rory' }];
+    setScore('Tiger', 1, '34');
+    setThru('Tiger', 1, '9');
+    setScore('Rory', 1, '35');
+    setThru('Rory', 1, '9');
+    expect(await currentDayComplete('day1')).toBe(false);
+  });
+
+  it('returns true when all thru values are F', async () => {
+    store['tournament:players'] = [{ name: 'Tiger' }, { name: 'Rory' }];
+    setScore('Tiger', 1, '68');
+    setThru('Tiger', 1, 'F');
+    setScore('Rory', 1, '72');
+    setThru('Rory', 1, 'F');
+    expect(await currentDayComplete('day1')).toBe(true);
+  });
+
+  it('returns true when thru is 18 (equivalent to F)', async () => {
+    store['tournament:players'] = [{ name: 'Tiger' }];
+    setScore('Tiger', 1, '68');
+    setThru('Tiger', 1, '18');
+    expect(await currentDayComplete('day1')).toBe(true);
+  });
+
+  it('returns false when one player is still in progress', async () => {
+    store['tournament:players'] = [{ name: 'Tiger' }, { name: 'Rory' }];
+    setScore('Tiger', 1, '68');
+    setThru('Tiger', 1, 'F');
+    setScore('Rory', 1, '35');
+    setThru('Rory', 1, '10');
+    expect(await currentDayComplete('day1')).toBe(false);
+  });
+
+  it('returns true when score exists but no thru key (legacy data)', async () => {
+    store['tournament:players'] = [{ name: 'Tiger' }];
+    setScore('Tiger', 1, '68');
+    // No thru key set — legacy behavior, treat as complete
+    expect(await currentDayComplete('day1')).toBe(true);
   });
 
   it('handles a realistic large field with many CUTs on day 3', async () => {

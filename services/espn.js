@@ -38,14 +38,6 @@ function holesPlayed(linescore) {
 }
 
 /**
- * Check if a linescore represents a completed round (all 18 holes).
- */
-function isCompleteRound(linescore) {
-  if (!linescore || !linescore.displayValue || linescore.displayValue === '-') return false;
-  return holesPlayed(linescore) >= 18;
-}
-
-/**
  * fetchTournament() - Setup/init mode.
  * Returns { eventName, eventId, players: [{ name, espnId }] }
  */
@@ -72,7 +64,9 @@ export async function fetchTournament(date) {
 
 /**
  * fetchScores() - Score refresh mode.
- * Returns { players: [{ espnId, name, scores: { day1, day2, day3, day4 } }] }
+ * Returns { players: [{ espnId, name, scores: { day1, ... }, thru: { day1, ... } }] }
+ * In-progress rounds return current strokes + holes played.
+ * Completed rounds return final strokes + 'F'.
  */
 export async function fetchScores(date) {
   const data = await fetchScoreboard(date);
@@ -81,18 +75,27 @@ export async function fetchScores(date) {
   const players = competitors.map((c) => {
     const linescores = c.linescores || [];
     const scores = { day1: null, day2: null, day3: null, day4: null };
+    const thru = { day1: null, day2: null, day3: null, day4: null };
+    const relativeScores = { day1: null, day2: null, day3: null, day4: null };
 
     for (let i = 0; i < linescores.length; i++) {
       const ls = linescores[i];
-      if (isCompleteRound(ls)) {
-        scores[`day${i + 1}`] = Math.round(ls.value);
-      }
+      if (!ls || !ls.displayValue || ls.displayValue === '-') continue;
+
+      const holes = holesPlayed(ls);
+      if (holes === 0) continue;
+
+      scores[`day${i + 1}`] = Math.round(ls.value);
+      thru[`day${i + 1}`] = holes >= 18 ? 'F' : holes;
+      relativeScores[`day${i + 1}`] = ls.displayValue;
     }
 
     return {
       espnId: c.id,
       name: c.athlete?.displayName || 'Unknown',
       scores,
+      thru,
+      relativeScores,
     };
   });
 

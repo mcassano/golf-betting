@@ -37,10 +37,12 @@ export async function syncScores(io, date) {
 
     const key = encodeKey(stored.name);
 
-    // Write completed round scores
+    // Write scores and thru data (including in-progress rounds)
     for (let day = 1; day <= 4; day++) {
       const dayKey = `day${day}`;
       const espnScore = ep.scores[dayKey];
+      const espnThru = ep.thru?.[dayKey];
+      const espnRelative = ep.relativeScores?.[dayKey];
       if (espnScore !== null) {
         // Don't overwrite admin-locked scores
         if (lockedSet.has(`${key}:${dayKey}`)) continue;
@@ -48,6 +50,14 @@ export async function syncScores(io, date) {
         if (existing !== String(espnScore)) {
           await set(`scores:${key}:${dayKey}`, String(espnScore));
           updated++;
+        }
+        // Always update thru so it reflects current progress
+        if (espnThru !== null && espnThru !== undefined) {
+          await set(`scores:${key}:${dayKey}:thru`, String(espnThru));
+        }
+        // Store ESPN's relative-to-par display value (e.g. "-4", "+2", "E")
+        if (espnRelative) {
+          await set(`scores:${key}:${dayKey}:rel`, espnRelative);
         }
       }
     }

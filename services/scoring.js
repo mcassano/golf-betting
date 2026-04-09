@@ -6,6 +6,23 @@ export function isWD(raw) {
   return raw === 'WD';
 }
 
+// True when a score exists but the round hasn't finished (thru is not F/18).
+// Null thru (legacy data or no thru key) is treated as complete.
+export function isInProgress(raw, thru) {
+  if (raw === null || raw === 'CUT' || raw === 'WD') return false;
+  return !!thru && thru !== 'F' && thru !== '18';
+}
+
+// Fetch score and thru keys in a single mget, returning parallel arrays.
+async function fetchWithThru(scoreKeys) {
+  const thruKeys = scoreKeys.map((k) => `${k}:thru`);
+  const all = scoreKeys.length ? await mget(...scoreKeys, ...thruKeys) : [];
+  return {
+    values: all.slice(0, scoreKeys.length),
+    thruValues: all.slice(scoreKeys.length),
+  };
+}
+
 export function resolveScore(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   if (raw === 'WD') return null;
@@ -46,20 +63,29 @@ export function bestNScore(rawScores, bestN) {
 export async function teamScoreForDay(player, dayN, bestN = 6) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
-  const keys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
-  const rawScores = await mget(...keys);
-  return bestNScore(rawScores, bestN);
+  const scoreKeys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
+  const { values: rawScores, thruValues } = await fetchWithThru(scoreKeys);
+  const effectiveScores = rawScores.map((score, i) =>
+    isInProgress(score, thruValues[i]) ? null : score
+  );
+  return bestNScore(effectiveScores, bestN);
 }
 
 // Day 3 & 4: sum of best 2 golfers that day
 export async function teamScoreBest2ForDay(player, dayN) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
-  const keys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
-  const rawValues = await mget(...keys);
+  const scoreKeys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
+  const { values: rawValues, thruValues } = await fetchWithThru(scoreKeys);
   const scores = [];
   let partial = false;
-  for (const raw of rawValues) {
+  for (let i = 0; i < rawValues.length; i++) {
+    const raw = rawValues[i];
+    if (isInProgress(raw, thruValues[i])) {
+      partial = true;
+      scores.push(PENALTY);
+      continue;
+    }
     const score = resolveScore(raw);
     if (score === null) {
       if (!isWD(raw)) partial = true;
@@ -77,13 +103,12 @@ export async function teamOverallScore(player) {
   const golfers = await getJSON(`teams:${player}`);
   if (!golfers) return { total: null, partial: true };
 
-  // Fetch all 4 days for all golfers in one MGET
-  const keys = [];
+  const scoreKeys = [];
   for (const golfer of golfers) {
     const k = encodeKey(golfer);
-    for (let day = 1; day <= 4; day++) keys.push(`scores:${k}:day${day}`);
+    for (let day = 1; day <= 4; day++) scoreKeys.push(`scores:${k}:day${day}`);
   }
-  const values = await mget(...keys);
+  const { values, thruValues } = await fetchWithThru(scoreKeys);
 
   const cumulative = [];
   let partial = false;
@@ -91,14 +116,20 @@ export async function teamOverallScore(player) {
   for (const golfer of golfers) {
     let cum = 0;
     for (let day = 1; day <= 4; day++) {
-      const raw = values[i++];
-      const score = resolveScore(raw);
-      if (score === null) {
-        if (!isWD(raw)) partial = true;
+      const raw = values[i];
+      if (isInProgress(raw, thruValues[i])) {
+        partial = true;
         cum += PENALTY;
       } else {
-        cum += score;
+        const score = resolveScore(raw);
+        if (score === null) {
+          if (!isWD(raw)) partial = true;
+          cum += PENALTY;
+        } else {
+          cum += score;
+        }
       }
+      i++;
     }
     cumulative.push({ golfer, total: cum });
   }
@@ -116,22 +147,26 @@ export async function allGolfersCumulative() {
   const allGolfers = await getJSON('tournament:players');
   if (!allGolfers) return {};
 
-  // Fetch all scores in one MGET
-  const keys = [];
+  const scoreKeys = [];
   for (const g of allGolfers) {
     const k = encodeKey(g.name);
-    for (let day = 1; day <= 4; day++) keys.push(`scores:${k}:day${day}`);
+    for (let day = 1; day <= 4; day++) scoreKeys.push(`scores:${k}:day${day}`);
   }
-  const values = await mget(...keys);
+  const { values, thruValues } = await fetchWithThru(scoreKeys);
 
   const result = {};
   let i = 0;
   for (const g of allGolfers) {
     let cum = 0;
     for (let day = 1; day <= 4; day++) {
-      const raw = values[i++];
-      const score = resolveScore(raw);
-      cum += score === null ? PENALTY : score;
+      const raw = values[i];
+      if (isInProgress(raw, thruValues[i])) {
+        cum += PENALTY;
+      } else {
+        const score = resolveScore(raw);
+        cum += score === null ? PENALTY : score;
+      }
+      i++;
     }
     result[g.name] = cum;
   }
@@ -175,12 +210,13 @@ export async function allSelectedScoresForDay(users, dayN) {
     }
   }
 
-  const values = scoreKeys.length ? await mget(...scoreKeys) : [];
+  const { values, thruValues } = await fetchWithThru(scoreKeys);
   const entries = [];
   let expected = 0;
   for (let i = 0; i < lookups.length; i++) {
     const raw = values[i];
     if (!isWD(raw)) expected++;
+    if (isInProgress(raw, thruValues[i])) continue;
     const score = resolveScore(raw);
     if (score !== null) {
       entries.push({ golfer: lookups[i].golfer, score, owner: lookups[i].user, isWC: lookups[i].isWC });

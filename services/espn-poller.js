@@ -1,8 +1,8 @@
-import { get, getJSON } from './redis.js';
-import { encodeKey } from './scoring.js';
+import { get, mget, getJSON } from './redis.js';
+import { encodeKey, isInProgress } from './scoring.js';
 import { syncScores } from './espn-sync.js';
 
-const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 let pollTimer = null;
 let lastPollTime = null;
@@ -51,19 +51,39 @@ async function currentDayComplete(day) {
   const dayNum = parseInt(day.replace('day', ''), 10);
   const players = await getJSON('tournament:players') || [];
   if (!players.length) return false;
-  for (const p of players) {
-    const key = encodeKey(p.name);
-    // Skip players who were CUT or WD on a previous day — they won't have
-    // scores for this day and shouldn't block auto-stop.
-    let eliminated = false;
-    for (let d = 1; d < dayNum; d++) {
-      const prev = await get(`scores:${key}:day${d}`);
-      if (prev === 'CUT' || prev === 'WD') { eliminated = true; break; }
-    }
-    if (eliminated) continue;
 
-    const v = await get(`scores:${key}:${day}`);
-    if (v === null || v === undefined) return false;
+  // Batch all lookups: previous-day scores (for CUT/WD check) + current day score + thru
+  const keys = [];
+  const layout = []; // { playerIdx, type: 'prev'|'score'|'thru', day? }
+  for (let pi = 0; pi < players.length; pi++) {
+    const key = encodeKey(players[pi].name);
+    for (let d = 1; d < dayNum; d++) {
+      keys.push(`scores:${key}:day${d}`);
+      layout.push({ pi, type: 'prev' });
+    }
+    keys.push(`scores:${key}:${day}`);
+    layout.push({ pi, type: 'score' });
+    keys.push(`scores:${key}:${day}:thru`);
+    layout.push({ pi, type: 'thru' });
+  }
+
+  const vals = keys.length ? await mget(...keys) : [];
+
+  // Parse batched results per player
+  const playerScore = new Array(players.length).fill(undefined);
+  const playerThru = new Array(players.length).fill(null);
+  const eliminated = new Set();
+  for (let i = 0; i < layout.length; i++) {
+    const { pi, type } = layout[i];
+    if (type === 'prev' && (vals[i] === 'CUT' || vals[i] === 'WD')) eliminated.add(pi);
+    else if (type === 'score') playerScore[pi] = vals[i];
+    else if (type === 'thru') playerThru[pi] = vals[i];
+  }
+
+  for (let pi = 0; pi < players.length; pi++) {
+    if (eliminated.has(pi)) continue;
+    if (playerScore[pi] === null || playerScore[pi] === undefined) return false;
+    if (isInProgress(playerScore[pi], playerThru[pi])) return false;
   }
   return true;
 }
@@ -78,7 +98,7 @@ export function startPolling(io) {
   }
 
   polling = true;
-  console.log('[ESPN Poller] Starting polling (every 30 minutes)');
+  console.log('[ESPN Poller] Starting polling (every 5 minutes)');
 
   // Do an immediate poll, then set interval
   poll(io).catch((err) => console.error('[ESPN Poller] Initial poll error:', err));

@@ -23,12 +23,20 @@ async function api(method, path, body) {
 function el(id) { return document.getElementById(id); }
 
 // Sum numeric round scores, ignoring CUT/WD/empty. Returns total + count of rounds played.
-function sumPlayed(rounds) {
+function isRoundInProgress(thru) {
+  return !!thru && thru !== 'F' && thru !== '18';
+}
+
+function sumPlayed(rounds, thrus) {
   let total = 0, played = 0;
-  for (const v of rounds) {
+  for (let i = 0; i < rounds.length; i++) {
+    const v = rounds[i];
     if (v === undefined || v === null || v === '' || v === 'CUT' || v === 'WD') continue;
     const n = parseInt(v, 10);
-    if (!isNaN(n)) { total += n; played++; }
+    if (isNaN(n)) continue;
+    if (isRoundInProgress(thrus ? thrus[i] : null)) continue;
+    total += n;
+    played++;
   }
   return { total, played };
 }
@@ -42,13 +50,29 @@ function toParStr(total, played, par) {
   return `<span class="text-red-600">${diff}</span>`;
 }
 
-// Render a raw round score (e.g. "68"), coloring red if under par.
-function dayCell(v, par) {
+// Render a round score with thru info.
+// Completed: "-5 F 67"  In-progress: "-3 thru 12"  Not started: "—"
+function dayCell(v, par, thru, rel) {
   if (v === undefined || v === null || v === '') return '<span class="text-gray-300">—</span>';
   if (v === 'CUT') return '<span class="badge badge-cut">CUT</span>';
   if (v === 'WD') return '<span class="badge badge-wd">WD</span>';
   const n = parseInt(v, 10);
-  if (!isNaN(n) && n < par) return `<span class="text-red-600">${v}</span>`;
+  if (isNaN(n)) return `${v}`;
+
+  // Use ESPN's relative-to-par when available; fall back to computing from full par
+  const diff = n - par;
+  const computedRel = diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
+
+  const relStr = rel || computedRel;
+  const color = relStr.startsWith('-') ? 'text-red-600' : '';
+
+  if (isRoundInProgress(thru)) {
+    return `<span class="${color}">${relStr}</span> <span class="text-gray-400 text-xs">thru ${thru}</span>`;
+  } else if (thru) {
+    return `<span class="${color}">${relStr}</span> <span class="text-gray-400 text-xs">F ${n}</span>`;
+  }
+  // Fallback: no thru data, show raw score (legacy)
+  if (n < par) return `<span class="text-red-600">${v}</span>`;
   return `${v}`;
 }
 
@@ -1117,13 +1141,15 @@ async function renderScoreboard(container) {
             ${golfers.map((g) => {
               const s = scores[g] || {};
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const { total, played } = sumPlayed(dayScores);
+              const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
+              const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+              const { total, played } = sumPlayed(dayScores, dayThrus);
               return `<tr>
                 <td class="font-medium">
                   ${g}
                   ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                 </td>
-                ${dayScores.map((v) => `<td>${dayCell(v, tournament?.par || 72)}</td>`).join('')}
+                ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
                 <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '<span class="text-gray-300">—</span>'}</td>
               </tr>`;
             }).join('')}
@@ -1149,10 +1175,12 @@ async function renderScoreboard(container) {
             ${scored.map((g) => {
               const s = scores[g] || {};
               const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const { total, played } = sumPlayed(dayScores);
+              const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
+              const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+              const { total, played } = sumPlayed(dayScores, dayThrus);
               return `<tr>
                 <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
-                ${dayScores.map((v) => `<td>${dayCell(v, tournament?.par || 72)}</td>`).join('')}
+                ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
                 <td class="font-semibold">${played ? toParStr(total, played, tournament?.par || 72) : '—'}</td>
               </tr>`;
             }).join('')}

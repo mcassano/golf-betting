@@ -30,6 +30,11 @@ function setScore(golfer, day, score) {
   store[`scores:${key}:day${day}`] = score;
 }
 
+function setThru(golfer, day, thru) {
+  const key = golfer.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '');
+  store[`scores:${key}:day${day}:thru`] = thru;
+}
+
 beforeEach(() => clearStore());
 
 // ── teamScoreForDay ──────────────────────────────────────────────────────────
@@ -77,6 +82,52 @@ describe('teamScoreForDay', () => {
     const res = await teamScoreForDay('nobody', 1, 6);
     expect(res.partial).toBe(true);
   });
+
+  it('treats in-progress rounds (thru != F) as partial', async () => {
+    const golfers = ['A', 'B', 'C'];
+    setTeam('alice', golfers);
+    setScore('A', 1, '34');
+    setThru('A', 1, '9');  // in progress
+    setScore('B', 1, '68');
+    setThru('B', 1, 'F');  // complete
+    setScore('C', 1, '70');
+    setThru('C', 1, 'F');  // complete
+    const res = await teamScoreForDay('alice', 1, 3);
+    expect(res.partial).toBe(true);
+  });
+
+  it('counts all scores when all thru values are F', async () => {
+    const golfers = ['A', 'B', 'C'];
+    setTeam('alice', golfers);
+    setScore('A', 1, '68');
+    setThru('A', 1, 'F');
+    setScore('B', 1, '70');
+    setThru('B', 1, 'F');
+    setScore('C', 1, '72');
+    setThru('C', 1, 'F');
+    const res = await teamScoreForDay('alice', 1, 3);
+    expect(res.total).toBe(68 + 70 + 72);
+    expect(res.partial).toBe(false);
+  });
+
+  it('treats thru 18 as complete', async () => {
+    setTeam('alice', ['A']);
+    setScore('A', 1, '68');
+    setThru('A', 1, '18');
+    const res = await teamScoreForDay('alice', 1, 1);
+    expect(res.total).toBe(68);
+    expect(res.partial).toBe(false);
+  });
+
+  it('works with no thru data (legacy scores)', async () => {
+    setTeam('alice', ['A', 'B']);
+    setScore('A', 1, '68');
+    setScore('B', 1, '70');
+    // No thru keys — legacy behavior, should treat as complete
+    const res = await teamScoreForDay('alice', 1, 2);
+    expect(res.total).toBe(68 + 70);
+    expect(res.partial).toBe(false);
+  });
 });
 
 // ── teamScoreBest2ForDay ─────────────────────────────────────────────────────
@@ -109,6 +160,31 @@ describe('teamScoreBest2ForDay', () => {
     const res = await teamScoreBest2ForDay('bob', 3);
     expect(res.partial).toBe(true);
   });
+
+  it('treats in-progress rounds as partial', async () => {
+    setTeam('bob', ['A', 'B', 'C']);
+    setScore('A', 3, '34');
+    setThru('A', 3, '9');  // in progress
+    setScore('B', 3, '68');
+    setThru('B', 3, 'F');
+    setScore('C', 3, '70');
+    setThru('C', 3, 'F');
+    const res = await teamScoreBest2ForDay('bob', 3);
+    expect(res.partial).toBe(true);
+  });
+
+  it('picks best 2 when all rounds are complete (thru F)', async () => {
+    setTeam('bob', ['A', 'B', 'C']);
+    setScore('A', 3, '68');
+    setThru('A', 3, 'F');
+    setScore('B', 3, '75');
+    setThru('B', 3, 'F');
+    setScore('C', 3, '70');
+    setThru('C', 3, 'F');
+    const res = await teamScoreBest2ForDay('bob', 3);
+    expect(res.total).toBe(68 + 70);
+    expect(res.partial).toBe(false);
+  });
 });
 
 // ── teamOverallScore ─────────────────────────────────────────────────────────
@@ -139,6 +215,39 @@ describe('teamOverallScore', () => {
     // B cumulative: 72 + 99 + 99 + 99 = 369
     const res = await teamOverallScore('charlie');
     expect(res.total).toBe(280 + 369);
+    expect(res.partial).toBe(false);
+  });
+
+  it('marks partial when any day has in-progress thru', async () => {
+    setTeam('charlie', ['A', 'B']);
+    // A: days 1-3 complete, day 4 in progress
+    [68, 70, 72].forEach((s, d) => {
+      setScore('A', d + 1, String(s));
+      setThru('A', d + 1, 'F');
+    });
+    setScore('A', 4, '34');
+    setThru('A', 4, '9');  // in progress
+    // B: all complete
+    [70, 70, 70, 70].forEach((s, d) => {
+      setScore('B', d + 1, String(s));
+      setThru('B', d + 1, 'F');
+    });
+    const res = await teamOverallScore('charlie');
+    expect(res.partial).toBe(true);
+  });
+
+  it('not partial when all thru values are F', async () => {
+    setTeam('charlie', ['A', 'B']);
+    [68, 70, 72, 74].forEach((s, d) => {
+      setScore('A', d + 1, String(s));
+      setThru('A', d + 1, 'F');
+    });
+    [70, 70, 70, 70].forEach((s, d) => {
+      setScore('B', d + 1, String(s));
+      setThru('B', d + 1, 'F');
+    });
+    const res = await teamOverallScore('charlie');
+    expect(res.total).toBe(284 + 280);
     expect(res.partial).toBe(false);
   });
 });
@@ -190,5 +299,42 @@ describe('allSelectedScoresForDay', () => {
     const wcEntry = entries.find((e) => e.isWC);
     expect(wcEntry.golfer).toBe('WC_Pick');
     expect(wcEntry.score).toBe(65);
+  });
+
+  it('excludes in-progress golfers from entries', async () => {
+    setTeam('alice', ['A', 'B']);
+    setScore('A', 1, '68');
+    setThru('A', 1, 'F');
+    setScore('B', 1, '34');
+    setThru('B', 1, '9');  // in progress
+
+    const { entries, expected } = await allSelectedScoresForDay(['alice'], 1);
+    expect(entries).toHaveLength(1);  // only A (complete)
+    expect(expected).toBe(2);  // both expected
+  });
+
+  it('includes all golfers when all rounds complete', async () => {
+    setTeam('alice', ['A', 'B']);
+    setScore('A', 1, '68');
+    setThru('A', 1, 'F');
+    setScore('B', 1, '72');
+    setThru('B', 1, 'F');
+
+    const { entries, expected } = await allSelectedScoresForDay(['alice'], 1);
+    expect(entries).toHaveLength(2);
+    expect(expected).toBe(2);
+  });
+
+  it('excludes in-progress WC picks from entries', async () => {
+    setTeam('alice', ['A']);
+    store['wc:alice'] = 'WC_Pick';
+    setScore('A', 1, '68');
+    setThru('A', 1, 'F');
+    setScore('WC_Pick', 1, '32');
+    setThru('WC_Pick', 1, '8');  // in progress
+
+    const { entries } = await allSelectedScoresForDay(['alice'], 1);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].golfer).toBe('A');
   });
 });

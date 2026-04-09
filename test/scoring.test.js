@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resolveScore, isWD, bestNScore, countMaxWDs, encodeKey } from '../services/scoring.js';
+import { resolveScore, isWD, isInProgress, bestNScore, countMaxWDs, encodeKey } from '../services/scoring.js';
 
 // ── isWD ─────────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,31 @@ describe('isWD', () => {
     expect(isWD(null)).toBe(false);
     expect(isWD(undefined)).toBe(false);
     expect(isWD('')).toBe(false);
+  });
+});
+
+// ── isInProgress ────────────────────────────────────────────────────────────
+
+describe('isInProgress', () => {
+  it('returns true for numeric thru values', () => {
+    expect(isInProgress('34', '9')).toBe(true);
+    expect(isInProgress('50', '12')).toBe(true);
+  });
+
+  it('returns false when thru is F or 18', () => {
+    expect(isInProgress('68', 'F')).toBe(false);
+    expect(isInProgress('68', '18')).toBe(false);
+  });
+
+  it('returns false when thru is null (legacy data)', () => {
+    expect(isInProgress('68', null)).toBe(false);
+    expect(isInProgress('68', undefined)).toBe(false);
+  });
+
+  it('returns false for null/CUT/WD scores regardless of thru', () => {
+    expect(isInProgress(null, '9')).toBe(false);
+    expect(isInProgress('CUT', '9')).toBe(false);
+    expect(isInProgress('WD', '9')).toBe(false);
   });
 });
 

@@ -354,12 +354,14 @@ router.get('/scores', async (req, res) => {
   const allGolfers = await getJSON('tournament:players') || [];
   if (!allGolfers.length) return res.json({});
 
-  // Build all keys upfront, fetch in one MGET call
+  // Build all keys upfront, fetch in one MGET call (scores + thru)
   const redisKeys = [];
   for (const g of allGolfers) {
     const key = encodeKey(g.name);
     for (let day = 1; day <= 4; day++) {
       redisKeys.push(`scores:${key}:day${day}`);
+      redisKeys.push(`scores:${key}:day${day}:thru`);
+      redisKeys.push(`scores:${key}:day${day}:rel`);
     }
   }
   const values = await mget(...redisKeys);
@@ -370,6 +372,8 @@ router.get('/scores', async (req, res) => {
     result[g.name] = {};
     for (let day = 1; day <= 4; day++) {
       result[g.name][`day${day}`] = values[i++];
+      result[g.name][`day${day}Thru`] = values[i++];
+      result[g.name][`day${day}Rel`] = values[i++];
     }
   }
   res.json(result);
@@ -384,6 +388,7 @@ router.post('/admin/scores', requireUser, async (req, res) => {
   const key = encodeKey(golfer);
   const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
   await set(`scores:${key}:day${dayN}`, val);
+  await set(`scores:${key}:day${dayN}:thru`, 'F');
   // Lock this score so ESPN sync won't overwrite it
   const locked = await getJSON('scores:locked') || [];
   const lockId = `${key}:day${dayN}`;
@@ -410,6 +415,7 @@ router.post('/admin/scores/wd', requireUser, async (req, res) => {
   const key = encodeKey(golfer);
   for (let d = dayStart; d <= 4; d++) {
     await set(`scores:${key}:day${d}`, 'WD');
+    await del(`scores:${key}:day${d}:thru`);
   }
   emit('scores:updated', { golfer, wd: true, fromDay: dayStart });
   res.json({ ok: true, fromDay: dayStart, throughDay: 4 });
