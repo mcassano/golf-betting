@@ -1,5 +1,9 @@
 /* Custom styles on top of Tailwind */
 
+html, body {
+  overflow-x: hidden;
+}
+
 .nav-link {
   padding: 0.375rem 0.75rem;
   border-radius: 0.375rem;

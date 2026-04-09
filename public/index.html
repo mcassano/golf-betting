@@ -22,16 +22,18 @@
 </head>
 <body class="bg-gray-50 text-gray-900 min-h-screen">
   <nav id="nav" class="hidden bg-green-800 text-white shadow-md">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="text-xl">⛳</span>
-        <span id="nav-tournament-name" class="font-semibold text-lg">Golf Betting</span>
+    <div class="max-w-5xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">⛳</span>
+          <span id="nav-tournament-name" class="font-semibold text-lg">Golf Betting</span>
+        </div>
+        <div class="flex items-center gap-3 text-sm">
+          <span class="text-green-200">Signed in as <strong id="nav-user" class="text-white"></strong></span>
+          <button onclick="logout()" class="text-green-200 hover:text-white underline">Sign out</button>
+        </div>
       </div>
-      <div class="flex items-center gap-1 text-sm" id="nav-links"></div>
-      <div class="flex items-center gap-3 text-sm">
-        <span class="text-green-200">Signed in as <strong id="nav-user" class="text-white"></strong></span>
-        <button onclick="logout()" class="text-green-200 hover:text-white underline">Sign out</button>
-      </div>
+      <div class="flex flex-wrap items-center gap-1 text-sm mt-2" id="nav-links"></div>
     </div>
   </nav>
   <main id="app" class="max-w-5xl mx-auto px-4 py-6"></main>
