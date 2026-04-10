@@ -69,6 +69,7 @@ function routeFromStatus(status) {
 
 function navigate(view) {
   state.view = view;
+  if (location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
   renderApp();
 }
 window.navigate = navigate;
@@ -1458,7 +1459,10 @@ async function init() {
       state.tournament = await api('GET', '/tournament');
       document.title = state.tournament?.name || 'Golf Betting';
       setupSocket();
-      navigate(state.role === 'patron' ? 'scoreboard' : routeFromStatus(state.tournament?.status));
+      const allViews = ['admin', 'bets', 'draft', 'myTeam', 'leaderboard', 'scoreboard'];
+      const hashView = location.hash.slice(1);
+      const defaultView = state.role === 'patron' ? 'scoreboard' : routeFromStatus(state.tournament?.status);
+      navigate(allViews.includes(hashView) ? hashView : defaultView);
     } else {
       navigate('login');
     }
