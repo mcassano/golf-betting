@@ -1,24 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Helper to build a linescore with the stats structure ESPN uses
+// Helper to build a linescore with hole-by-hole scores ESPN uses
 function makeLinescore(value, displayValue, holesPlayed) {
-  // ESPN stats: [birdies, bogeys, ?, double bogeys, ?, pars] — sum = holes played
-  const pars = holesPlayed;
   return {
     value,
     displayValue,
-    statistics: {
-      categories: [{
-        stats: [
-          { value: 0 },  // birdies
-          { value: 0 },  // bogeys
-          { value: 0 },
-          { value: 0 },
-          { value: 0 },
-          { value: pars }, // pars (all holes as pars for simplicity)
-        ],
-      }],
-    },
+    linescores: Array.from({ length: holesPlayed }, (_, i) => ({
+      value: 4, displayValue: '4', period: i + 1,
+    })),
   };
 }
 

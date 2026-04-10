@@ -25,16 +25,10 @@ function getCompetitors(data) {
 }
 
 /**
- * Count holes played in a linescore by summing stats[0] through stats[5].
+ * Count holes played in a linescore using the hole-by-hole scores array.
  */
 function holesPlayed(linescore) {
-  const stats = linescore?.statistics?.categories?.[0]?.stats;
-  if (!stats || stats.length < 6) return 0;
-  let total = 0;
-  for (let i = 0; i <= 5; i++) {
-    total += parseFloat(stats[i]?.value || 0);
-  }
-  return total;
+  return linescore?.linescores?.length || 0;
 }
 
 /**
