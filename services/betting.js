@@ -219,6 +219,8 @@ export async function computeWCDailyResult(users, dayN) {
   if (entries.length === 0) return { type: 'pending' };
   // Pending if golfers haven't started at all (no score data)
   if (entries.length < expected) return { type: 'pending' };
+  // Pending if any rounds are still in progress
+  if (partial) return { type: 'pending' };
 
   const minScore = Math.min(...entries.map((e) => e.score));
   const atMin = entries.filter((e) => e.score === minScore);
