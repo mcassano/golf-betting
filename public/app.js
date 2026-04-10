@@ -1170,7 +1170,7 @@ async function renderScoreboard(container) {
           html += `<td class="text-sm">${rank === 0 ? '<span class="text-gray-500">3-way tie</span>' : ''}</td>`;
         } else if (results && rank < results.length) {
           const { player, score, isWin } = results[rank];
-          const cls = isWin ? 'text-green-700 font-semibold' : 'text-red-600';
+          const cls = isWin ? 'text-green-700 font-semibold' : 'text-gray-700';
           html += `<td class="${cls} text-sm">${player} ${relStr(score, bet.rounds)}</td>`;
         } else {
           html += `<td></td>`;
