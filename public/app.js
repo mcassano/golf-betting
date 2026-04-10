@@ -1146,7 +1146,51 @@ async function renderScoreboard(container) {
       }
     }
 
+    // Count green jackets per user
+    const jacketCounts = {};
+    for (const u of users) jacketCounts[u] = 0;
+    const jacketBetKeys = ['day1', 'day2', 'day3', 'day4', 'overall'];
+    for (const key of jacketBetKeys) {
+      const bet = lb[key];
+      if (!bet) continue;
+      if (bet.type === 'winner') { if (jacketCounts[bet.winner] !== undefined) jacketCounts[bet.winner]++; }
+      else if (bet.type === 'two_way_tie') { for (const w of bet.winners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; } }
+    }
+    const wcDailyMap = lb.wcDaily || {};
+    for (const key of Object.keys(wcDailyMap)) {
+      const wd = wcDailyMap[key];
+      if (wd?.wcWinners && (wd.type === 'winner' || wd.type === 'two_way_tie')) {
+        for (const w of wd.wcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
+      }
+    }
+    if (lb.wc?.resolved && lb.wc.wcWinners) {
+      for (const w of lb.wc.wcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
+    }
+
+    const totalJackets = Object.values(jacketCounts).reduce((a, b) => a + b, 0);
+
     html += `<div class="card mb-4"><div class="section-title">Bet Winners</div>`;
+
+    const jacketSvg = `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22 12h20v6c0 2-4 4-10 4s-10-2-10-4v-6z" fill="#065f46"/><path d="M22 12l-12 8v20l8 4v-16l4-4v-6z" fill="#047857"/><path d="M42 12l12 8v20l-8 4v-16l-4-4v-6z" fill="#047857"/><path d="M18 28v24h10V40h8v12h10V28l-7-4h-14l-7 4z" fill="#065f46"/><path d="M22 12l-4 6 4 4h20l4-4-4-6" fill="#047857" opacity=".3"/><path d="M10 20l8-4v8l-4 4v16l-4-2V20z" fill="#034e3a"/><path d="M54 20l-8-4v8l4 4v16l4-2V20z" fill="#034e3a"/><rect x="29" y="30" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="35" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="40" width="6" height="2" rx="1" fill="#a7f3d0"/><path d="M22 12c0-2 4-4 10-4s10 2 10 4" stroke="#034e3a" stroke-width="1" fill="none"/></svg>`;
+
+    if (totalJackets > 0) {
+      html += `<div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:white;border-radius:8px">`;
+      for (const u of users) {
+        const count = jacketCounts[u];
+        if (count > 0) {
+          html += `<div style="text-align:center;flex:1">`;
+          html += `<div style="display:flex;justify-content:center;gap:2px">${jacketSvg.repeat(count)}</div>`;
+          html += `<div style="color:#065f46;font-size:11px;font-weight:600;margin-top:4px">${u} — ${count}</div>`;
+          html += `</div>`;
+        } else {
+          html += `<div style="text-align:center;flex:1">`;
+          html += `<div style="color:#9ca3af;font-size:11px;font-weight:600">${u} — 0</div>`;
+          html += `</div>`;
+        }
+      }
+      html += `</div>`;
+    }
+
     html += `<div class="overflow-x-auto"><table class="score-table w-full" style="table-layout:fixed">`;
     html += `<colgroup><col style="width:40px">`;
     for (let i = 0; i < betLabels.length; i++) html += `<col>`;

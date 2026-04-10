@@ -211,3 +211,134 @@ describe('computeWCResult', () => {
     expect(result.wcWinners).toEqual([]);
   });
 });
+
+import { countGreenJackets } from '../services/betting.js';
+
+// ── countGreenJackets ───────────────────────────────────────────────────────
+
+describe('countGreenJackets', () => {
+  it('returns all zeros when no bets are resolved', () => {
+    const lb = {
+      day1: { type: 'pending' },
+      day2: { type: 'pending' },
+      wcDaily: {},
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 0, Marshall: 0,
+    });
+  });
+
+  it('awards one jacket for a sole winner', () => {
+    const lb = {
+      day1: { type: 'winner', winner: 'Mike' },
+      wcDaily: {},
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 1, Caleb: 0, Marshall: 0,
+    });
+  });
+
+  it('awards jackets to both players in a two-way tie', () => {
+    const lb = {
+      day1: { type: 'two_way_tie', winners: ['Mike', 'Caleb'] },
+      wcDaily: {},
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 1, Caleb: 1, Marshall: 0,
+    });
+  });
+
+  it('awards no jackets for a three-way tie', () => {
+    const lb = {
+      day1: { type: 'three_way_tie', winners: ['Mike', 'Caleb', 'Marshall'] },
+      wcDaily: {},
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 0, Marshall: 0,
+    });
+  });
+
+  it('counts WC daily winners', () => {
+    const lb = {
+      wcDaily: {
+        day1: { type: 'winner', wcWinners: ['Mike'] },
+        day2: { type: 'no_wc_winner' },
+      },
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 1, Caleb: 0, Marshall: 0,
+    });
+  });
+
+  it('counts WC daily two-way tie winners', () => {
+    const lb = {
+      wcDaily: {
+        day1: { type: 'two_way_tie', wcWinners: ['Mike', 'Caleb'] },
+      },
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 1, Caleb: 1, Marshall: 0,
+    });
+  });
+
+  it('counts WC tournament winner', () => {
+    const lb = {
+      wcDaily: {},
+      wc: { resolved: true, wcWinners: ['Marshall'] },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 0, Marshall: 1,
+    });
+  });
+
+  it('skips WC daily three-way ties', () => {
+    const lb = {
+      wcDaily: {
+        day1: { type: 'three_way_tie' },
+      },
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 0, Marshall: 0,
+    });
+  });
+
+  it('accumulates across multiple bets correctly', () => {
+    const lb = {
+      day1: { type: 'winner', winner: 'Mike' },
+      day2: { type: 'winner', winner: 'Mike' },
+      day3: { type: 'two_way_tie', winners: ['Mike', 'Caleb'] },
+      day4: { type: 'winner', winner: 'Caleb' },
+      overall: { type: 'winner', winner: 'Marshall' },
+      wcDaily: {
+        day1: { type: 'winner', wcWinners: ['Marshall'] },
+        day2: { type: 'no_wc_winner' },
+        day3: { type: 'pending' },
+      },
+      wc: { resolved: true, wcWinners: ['Marshall'] },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 3, Caleb: 2, Marshall: 3,
+    });
+  });
+
+  it('handles mixed pending and resolved bets', () => {
+    const lb = {
+      day1: { type: 'winner', winner: 'Caleb' },
+      day2: { type: 'pending' },
+      wcDaily: {
+        day1: { type: 'pending' },
+      },
+      wc: { resolved: false },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 1, Marshall: 0,
+    });
+  });
+});
