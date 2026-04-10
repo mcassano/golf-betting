@@ -1083,12 +1083,13 @@ function computePayoutSummary(lb, users) {
 // ── View: Scoreboard ──────────────────────────────────────────────────────────
 
 async function renderScoreboard(container) {
-  const [scores, teams, wcData, tournament, mcData] = await Promise.all([
+  const [scores, teams, wcData, tournament, mcData, lb] = await Promise.all([
     api('GET', '/scores'),
     api('GET', '/teams'),
     api('GET', '/wc'),
     api('GET', '/tournament'),
     api('GET', '/missedcut').catch(() => ({})),
+    api('GET', '/leaderboard').catch(() => ({})),
   ]);
 
   // Build ownership map
@@ -1101,6 +1102,119 @@ async function renderScoreboard(container) {
   const wcSet = new Set(Object.values(wcData).filter(Boolean));
 
   let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Scoreboard</h2>`;
+
+  // Bet winners summary
+  const par = tournament?.par || 72;
+  const relStr = (score, rounds) => {
+    const diff = score - rounds * par;
+    if (diff === 0) return 'E';
+    return diff > 0 ? `+${diff}` : `${diff}`;
+  };
+
+  const betLabels = [
+    { key: 'day1', label: 'Day 1' },
+    { key: 'day2', label: 'Day 2' },
+    { key: 'day3', label: 'Day 3' },
+    { key: 'day4', label: 'Day 4' },
+    { key: 'overall', label: 'Overall' },
+  ];
+  const wcDayLabels = [
+    { key: 'day1', label: 'WC Day 1' },
+    { key: 'day2', label: 'WC Day 2' },
+    { key: 'day3', label: 'WC Day 3' },
+    { key: 'day4', label: 'WC Day 4' },
+  ];
+  const hasBets = betLabels.some(({ key }) => lb[key]);
+  const hasWCDaily = lb.wcDaily && wcDayLabels.some(({ key }) => lb.wcDaily[key]);
+  if (hasBets || hasWCDaily) {
+    // Collect all users sorted by score for each bet
+    const users = await api('GET', '/users');
+
+    // Pre-compute sorted results per bet
+    const betResults = {};
+    for (const { key } of betLabels) {
+      const bet = lb[key];
+      if (bet && bet.scores && bet.type !== 'pending' && bet.type !== 'three_way_tie') {
+        const sorted = Object.entries(bet.scores)
+          .filter(([, s]) => s !== null)
+          .sort(([, a], [, b]) => a - b);
+        const winnerNames = bet.type === 'winner' ? [bet.winner] : bet.winners;
+        betResults[key] = sorted.map(([player, score]) => ({
+          player, score, isWin: winnerNames.includes(player),
+        }));
+      }
+    }
+
+    html += `<div class="card mb-4"><div class="section-title">Bet Winners</div>`;
+    html += `<div class="overflow-x-auto"><table class="score-table w-full" style="table-layout:fixed">`;
+    html += `<colgroup><col style="width:40px">`;
+    for (let i = 0; i < betLabels.length; i++) html += `<col>`;
+    html += `</colgroup>`;
+    html += `<thead><tr><th></th>`;
+    for (const { label } of betLabels) html += `<th>${label}</th>`;
+    html += `</tr></thead><tbody>`;
+
+    // One row per placement (1st, 2nd, 3rd)
+    const maxPlayers = users.length;
+    for (let rank = 0; rank < maxPlayers; rank++) {
+      html += `<tr>`;
+      html += `<td class="text-xs text-gray-400">${rank === 0 ? '1st' : rank === 1 ? '2nd' : '3rd'}</td>`;
+      for (const { key } of betLabels) {
+        const bet = lb[key];
+        const results = betResults[key];
+        if (!bet) {
+          html += `<td class="text-gray-300 text-sm">—</td>`;
+        } else if (bet.type === 'pending') {
+          html += `<td class="text-sm">${rank === 0 ? '<span class="italic text-gray-400">pending</span>' : '<span class="text-gray-300">—</span>'}</td>`;
+        } else if (bet.type === 'three_way_tie') {
+          html += `<td class="text-sm">${rank === 0 ? '<span class="text-gray-500">3-way tie</span>' : ''}</td>`;
+        } else if (results && rank < results.length) {
+          const { player, score, isWin } = results[rank];
+          const cls = isWin ? 'text-green-700 font-semibold' : 'text-red-600';
+          html += `<td class="${cls} text-sm">${player} ${relStr(score, bet.rounds)}</td>`;
+        } else {
+          html += `<td></td>`;
+        }
+      }
+      html += `</tr>`;
+    }
+    // WC Daily rows in the same table
+    if (hasWCDaily) {
+      html += `<tr><td colspan="6" class="border-t border-gray-100"></td></tr>`;
+      html += `<tr><th></th>`;
+      for (const { label } of wcDayLabels) html += `<th>${label}</th>`;
+      html += `<th>WC Overall</th></tr>`;
+      html += `<tr><td></td>`;
+      for (const { key } of wcDayLabels) {
+        const wd = lb.wcDaily?.[key];
+        if (!wd || wd.type === 'pending') {
+          html += `<td class="text-gray-400 italic text-sm">pending</td>`;
+        } else if (wd.type === 'no_wc_winner') {
+          let cell = `<div class="text-gray-500 text-sm">No winner</div>`;
+          cell += `<div class="text-xs text-gray-400">Low: ${wd.lowGolfers[0]} ${relStr(wd.minScore, 1)}</div>`;
+          if (wd.lowestWC) {
+            cell += `<div class="text-xs text-gray-400">Low WC: ${wd.lowestWC.golfer} ${relStr(wd.lowestWC.score, 1)}</div>`;
+          }
+          html += `<td>${cell}</td>`;
+        } else if (wd.type === 'three_way_tie') {
+          html += `<td class="text-gray-500 text-sm">3-way tie</td>`;
+        } else {
+          html += `<td class="text-green-700 font-semibold text-sm">${wd.wcWinners.join(' & ')}</td>`;
+        }
+      }
+      const wc = lb.wc;
+      if (!wc || !wc.resolved) {
+        html += `<td class="text-gray-400 italic text-sm">pending</td>`;
+      } else if (wc.wcWinners?.length) {
+        html += `<td class="text-green-700 font-semibold text-sm">${wc.wcWinners.join(' & ')}</td>`;
+      } else {
+        html += `<td class="text-gray-500 text-sm">No winner</td>`;
+      }
+      html += `</tr>`;
+    }
+
+    html += `</tbody></table></div></div>`;
+  }
 
   // Group by owner for display
   const users = await api('GET', '/users');

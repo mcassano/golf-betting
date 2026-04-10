@@ -213,17 +213,18 @@ export async function allSelectedScoresForDay(users, dayN) {
   const { values, thruValues } = await fetchWithThru(scoreKeys);
   const entries = [];
   let expected = 0;
+  let partial = false;
   for (let i = 0; i < lookups.length; i++) {
     const raw = values[i];
     if (!isWD(raw)) expected++;
-    if (isInProgress(raw, thruValues[i])) continue;
+    if (isInProgress(raw, thruValues[i])) partial = true;
     const score = resolveScore(raw);
     if (score !== null) {
       entries.push({ golfer: lookups[i].golfer, score, owner: lookups[i].user, isWC: lookups[i].isWC });
     }
   }
 
-  return { entries, expected };
+  return { entries, expected, partial };
 }
 
 // Encode golfer name for use as Redis key part (replace spaces/special chars)

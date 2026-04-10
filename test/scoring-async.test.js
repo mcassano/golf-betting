@@ -301,16 +301,17 @@ describe('allSelectedScoresForDay', () => {
     expect(wcEntry.score).toBe(65);
   });
 
-  it('excludes in-progress golfers from entries', async () => {
+  it('includes in-progress golfers in entries and marks partial', async () => {
     setTeam('alice', ['A', 'B']);
     setScore('A', 1, '68');
     setThru('A', 1, 'F');
     setScore('B', 1, '34');
     setThru('B', 1, '9');  // in progress
 
-    const { entries, expected } = await allSelectedScoresForDay(['alice'], 1);
-    expect(entries).toHaveLength(1);  // only A (complete)
-    expect(expected).toBe(2);  // both expected
+    const { entries, expected, partial } = await allSelectedScoresForDay(['alice'], 1);
+    expect(entries).toHaveLength(2);  // both included
+    expect(expected).toBe(2);
+    expect(partial).toBe(true);
   });
 
   it('includes all golfers when all rounds complete', async () => {
@@ -325,7 +326,7 @@ describe('allSelectedScoresForDay', () => {
     expect(expected).toBe(2);
   });
 
-  it('excludes in-progress WC picks from entries', async () => {
+  it('includes in-progress WC picks in entries', async () => {
     setTeam('alice', ['A']);
     store['wc:alice'] = 'WC_Pick';
     setScore('A', 1, '68');
@@ -333,8 +334,8 @@ describe('allSelectedScoresForDay', () => {
     setScore('WC_Pick', 1, '32');
     setThru('WC_Pick', 1, '8');  // in progress
 
-    const { entries } = await allSelectedScoresForDay(['alice'], 1);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].golfer).toBe('A');
+    const { entries, partial } = await allSelectedScoresForDay(['alice'], 1);
+    expect(entries).toHaveLength(2);
+    expect(partial).toBe(true);
   });
 });
