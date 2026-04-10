@@ -1306,12 +1306,25 @@ async function renderScoreboard(container) {
                 ${dayTotals.map((t, i) => `<td>${dayCounts[i] ? diffToParStr(t) : '<span class="text-gray-300">—</span>'}</td>`).join('')}
                 <td>${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
               </tr>`);
+              // WC golfer row (not included in totals)
+              const wcGolfer = wcData[user];
+              if (wcGolfer) {
+                const ws = scores[wcGolfer] || {};
+                const wDayScores = [ws.day1, ws.day2, ws.day3, ws.day4];
+                const wDayThrus = [ws.day1Thru, ws.day2Thru, ws.day3Thru, ws.day4Thru];
+                const wDayRels = [ws.day1Rel, ws.day2Rel, ws.day3Rel, ws.day4Rel];
+                const { diff: wDiff, count: wCount } = sumAllRelative(wDayScores, wDayThrus, wDayRels, p);
+                rows.push(`<tr class="border-t border-dashed border-gray-200">
+                  <td class="font-medium text-amber-700">🎰 ${stripOdds(wcGolfer)} <span class="badge badge-wc ml-1">WC</span></td>
+                  ${wDayScores.map((v, idx) => `<td>${dayCell(v, p, wDayThrus[idx], wDayRels[idx])}</td>`).join('')}
+                  <td class="font-semibold">${wCount ? diffToParStr(wDiff) : '<span class="text-gray-300">—</span>'}</td>
+                </tr>`);
+              }
               return rows.join('');
             })()}
           </tbody>
         </table>
       </div>
-      ${wcData[user] ? `<p class="text-xs text-amber-600 mt-2">🎰 WC Pick: ${wcData[user]}</p>` : ''}
       ${mcData[user] ? `<p class="text-xs text-purple-600 mt-1">🎲 MC Bet: ${mcData[user]}</p>` : ''}
     </div>`;
   }
