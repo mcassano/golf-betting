@@ -3,8 +3,26 @@ import { encodeKey } from './scoring.js';
 import { fetchTournament, fetchScores } from './espn.js';
 
 /**
+ * Normalize a name for fuzzy matching: strip odds suffix, remove accents,
+ * collapse whitespace, lowercase.
+ */
+const NAME_ALIASES = {
+  johnny: 'john',
+};
+
+function normalizeName(name) {
+  const parts = name
+    .replace(/\s\+\d+$/, '')       // strip odds suffix e.g. "+550"
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip accents
+    .toLowerCase()
+    .split(/\s+/);
+  parts[0] = NAME_ALIASES[parts[0]] || parts[0];
+  return parts.join('');
+}
+
+/**
  * syncScores(io) - Fetch scores from ESPN and write to Redis.
- * Matches ESPN players to stored players by espnId.
+ * Matches ESPN players to stored players by espnId, falling back to name matching.
  * Emits scores:updated via Socket.io after updates.
  */
 export async function syncScores(io, date) {
@@ -15,21 +33,33 @@ export async function syncScores(io, date) {
     return { updated: 0, skipped: 0 };
   }
 
-  // Build a lookup: espnId -> stored player
+  // Build lookups: espnId -> stored player, normalized name -> stored player
   const espnIdToStored = {};
+  const nameToStored = {};
   for (const sp of storedPlayers) {
     if (sp.espnId) {
       espnIdToStored[sp.espnId] = sp;
     }
+    nameToStored[normalizeName(sp.name)] = sp;
   }
 
   const lockedSet = new Set(await getJSON('scores:locked') || []);
+  let needsPlayerSave = false;
 
   let updated = 0;
   let skipped = 0;
 
   for (const ep of espnPlayers) {
-    const stored = espnIdToStored[ep.espnId];
+    let stored = espnIdToStored[ep.espnId];
+    if (!stored) {
+      // Fall back to normalized name matching
+      stored = nameToStored[normalizeName(ep.name)];
+      if (stored) {
+        // Backfill espnId for future fast lookups
+        stored.espnId = ep.espnId;
+        needsPlayerSave = true;
+      }
+    }
     if (!stored) {
       skipped++;
       continue;
@@ -61,6 +91,12 @@ export async function syncScores(io, date) {
         }
       }
     }
+  }
+
+  // Persist backfilled espnIds so future syncs match by ID
+  if (needsPlayerSave) {
+    await setJSON('tournament:players', storedPlayers);
+    console.log('[ESPN Sync] Backfilled espnId on matched players');
   }
 
   if (updated > 0 && io) {
