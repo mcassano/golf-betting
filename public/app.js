@@ -1145,7 +1145,49 @@ async function renderScoreboard(container) {
       }
     }
 
+    // Count green jackets per user
+    const jacketCounts = {};
+    for (const u of users) jacketCounts[u] = 0;
+    const jacketBetKeys = ['day1', 'day2', 'day3', 'day4', 'overall'];
+    for (const key of jacketBetKeys) {
+      const bet = lb[key];
+      if (!bet) continue;
+      if (bet.type === 'winner') { if (jacketCounts[bet.winner] !== undefined) jacketCounts[bet.winner]++; }
+      else if (bet.type === 'two_way_tie') { for (const w of bet.winners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; } }
+    }
+    const wcDailyMap = lb.wcDaily || {};
+    for (const key of Object.keys(wcDailyMap)) {
+      const wd = wcDailyMap[key];
+      if (wd?.wcWinners && (wd.type === 'winner' || wd.type === 'two_way_tie')) {
+        for (const w of wd.wcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
+      }
+    }
+    if (lb.wc?.resolved && lb.wc.wcWinners) {
+      for (const w of lb.wc.wcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
+    }
+
+    const totalJackets = Object.values(jacketCounts).reduce((a, b) => a + b, 0);
+
     html += `<div class="card mb-4"><div class="section-title">Bet Winners</div>`;
+
+    if (totalJackets > 0) {
+      html += `<div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:linear-gradient(135deg,#065f46,#047857);border-radius:8px">`;
+      for (const u of users) {
+        const count = jacketCounts[u];
+        if (count > 0) {
+          html += `<div style="text-align:center;flex:1">`;
+          html += `<div style="font-size:24px">${'🧥'.repeat(count)}</div>`;
+          html += `<div style="color:#a7f3d0;font-size:11px;font-weight:600">${u} — ${count}</div>`;
+          html += `</div>`;
+        } else {
+          html += `<div style="text-align:center;flex:1">`;
+          html += `<div style="color:#6b8a7a;font-size:11px;font-weight:600">${u} — 0</div>`;
+          html += `</div>`;
+        }
+      }
+      html += `</div>`;
+    }
+
     html += `<div class="overflow-x-auto"><table class="score-table w-full" style="table-layout:fixed">`;
     html += `<colgroup><col style="width:40px">`;
     for (let i = 0; i < betLabels.length; i++) html += `<col>`;
