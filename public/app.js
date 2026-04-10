@@ -369,7 +369,7 @@ async function renderAdmin(container) {
     <div class="card mb-4">
       <div class="section-title">Course Par</div>
       <div class="flex gap-2 items-center">
-        <input type="number" id="t-par" value="${tournament?.par ?? 72}" min="1" class="w-24" />
+        <input type="number" id="t-par" value="${tournament?.par ?? 72}" min="1" style="width:5rem" />
         <button onclick="saveTournamentPar()" class="btn btn-secondary btn-sm">Save Par</button>
         <span class="text-xs text-gray-400">Used to derive "to par" displays from raw scores.</span>
       </div>
