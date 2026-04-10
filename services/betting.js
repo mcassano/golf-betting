@@ -191,3 +191,45 @@ export async function computeWCResult(users) {
     })),
   };
 }
+
+export function countGreenJackets(leaderboard, users) {
+  const counts = {};
+  for (const user of users) counts[user] = 0;
+
+  // Daily bets: day1, day2, day3, day4, overall
+  const betKeys = ['day1', 'day2', 'day3', 'day4', 'overall'];
+  for (const key of betKeys) {
+    const bet = leaderboard[key];
+    if (!bet) continue;
+    if (bet.type === 'winner') {
+      if (counts[bet.winner] !== undefined) counts[bet.winner]++;
+    } else if (bet.type === 'two_way_tie') {
+      for (const w of bet.winners) {
+        if (counts[w] !== undefined) counts[w]++;
+      }
+    }
+  }
+
+  // WC daily bets
+  const wcDaily = leaderboard.wcDaily || {};
+  for (const key of Object.keys(wcDaily)) {
+    const wd = wcDaily[key];
+    if (!wd || !wd.wcWinners) continue;
+    if (wd.type === 'winner' || wd.type === 'two_way_tie') {
+      for (const w of wd.wcWinners) {
+        if (counts[w] !== undefined) counts[w]++;
+      }
+    }
+  }
+
+  // WC tournament
+  const wc = leaderboard.wc;
+  if (wc?.resolved && wc.wcWinners) {
+    for (const w of wc.wcWinners) {
+      if (counts[w] !== undefined) counts[w]++;
+    }
+  }
+
+  return counts;
+}
+
