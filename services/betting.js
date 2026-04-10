@@ -75,7 +75,7 @@ export async function computeLeaderboard(users, meta) {
       let anyPartial = false;
       for (const user of users) {
         const res = await teamScoreForDay(user, n, bestN);
-        scores[user] = res.partial ? null : res.total;
+        scores[user] = res.total;
         if (res.partial) anyPartial = true;
       }
       result[key] = { scores, partial: anyPartial, bestN, rounds: bestN, ...determineBetWinner(scores) };
@@ -85,7 +85,7 @@ export async function computeLeaderboard(users, meta) {
       let anyPartial = false;
       for (const user of users) {
         const res = await teamScoreBest2ForDay(user, n);
-        scores[user] = res.partial ? null : res.total;
+        scores[user] = res.total;
         if (res.partial) anyPartial = true;
       }
       result[key] = { scores, partial: anyPartial, rounds: 2, ...determineBetWinner(scores) };
@@ -98,7 +98,7 @@ export async function computeLeaderboard(users, meta) {
     let anyPartial = false;
     for (const user of users) {
       const res = await teamOverallScore(user);
-      overallScores[user] = res.partial ? null : res.total;
+      overallScores[user] = res.total;
       if (res.partial) anyPartial = true;
     }
     // Overall = best 2 cumulative across all 4 days → 8 round-scores per team.

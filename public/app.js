@@ -47,9 +47,8 @@ function dayCell(v, par, thru, rel) {
   } else if (thru) {
     return `<span class="${color}">${relStr}</span> <span class="text-gray-400 text-xs">F ${n}</span>`;
   }
-  // Fallback: no thru data, show raw score (legacy)
-  if (n < par) return `<span class="text-red-600">${v}</span>`;
-  return `${v}`;
+  // Fallback: no thru data, show relative + raw score (same format as completed)
+  return `<span class="${color}">${relStr}</span> <span class="text-gray-400 text-xs">F ${n}</span>`;
 }
 
 function showToast(msg, type = 'info') {
@@ -1000,9 +999,10 @@ function renderBetCard(label, bet, users, par) {
         ${users.map((u) => {
           const score = bet.scores?.[u];
           const won = isWinner(u);
+          const partial = bet.partial && score !== null && score !== undefined;
           const scoreCell = score === null || score === undefined
             ? '<span class="text-gray-400">—</span>'
-            : (rounds ? toParStr(score, rounds, par) : score);
+            : (rounds ? toParStr(score, rounds, par) : score) + (partial ? '*' : '');
           return `<tr>
             <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner text-xs">you</span>' : ''}</td>
             <td>${scoreCell}</td>
