@@ -9,6 +9,90 @@ import {
   allSelectedScoresForDay,
 } from './scoring.js';
 
+export async function computeMissedCutResult(users) {
+  const picks = await getJSON('missedcut:picks');
+  if (!picks || Object.keys(picks).length === 0) return { resolved: false, picks: {} };
+
+  // Check each picked golfer for CUT status across all 4 days
+  const pickedGolfers = Object.values(picks);
+  const scoreKeys = [];
+  for (const golfer of pickedGolfers) {
+    const key = encodeKey(golfer);
+    for (let d = 1; d <= 4; d++) {
+      scoreKeys.push(`scores:${key}:day${d}`);
+    }
+  }
+  const scoreValues = scoreKeys.length ? await mget(...scoreKeys) : [];
+
+  // Determine which golfers missed the cut
+  const golferCut = {};
+  let idx = 0;
+  for (const golfer of pickedGolfers) {
+    const dayScores = scoreValues.slice(idx, idx + 4);
+    golferCut[golfer] = dayScores.some((v) => v === 'CUT');
+    idx += 4;
+  }
+
+  // Check if the cut has actually been made (at least one golfer in the tournament has CUT,
+  // or we're past day2). If no golfer anywhere has CUT scores yet, bet is still pending.
+  const anyCutMade = Object.values(golferCut).some((v) => v);
+  if (!anyCutMade) {
+    // Check tournament status — if day3+, cut is made but none of our picks missed
+    const meta = await getJSON('tournament:meta');
+    const statusOrder = ['setup', 'drafting', 'wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'];
+    const currentIdx = statusOrder.indexOf(meta?.status || 'setup');
+    if (currentIdx < statusOrder.indexOf('day3')) {
+      return { resolved: false, picks };
+    }
+    // Past day2 and no picked golfer has CUT — no winner
+    return {
+      resolved: true,
+      picks,
+      type: 'no_winner',
+      winners: [],
+      losers: users.filter((u) => picks[u]),
+      payout: 'No payout — no picked golfer missed the cut',
+    };
+  }
+
+  // Bet is resolved — determine winners and losers
+  const winners = [];
+  const losers = [];
+  for (const user of users) {
+    if (!picks[user]) continue;
+    if (golferCut[picks[user]]) {
+      winners.push(user);
+    } else {
+      losers.push(user);
+    }
+  }
+
+  if (winners.length === users.length || (winners.length > 0 && losers.length === 0)) {
+    return {
+      resolved: true, picks, type: 'three_way_tie',
+      winners, losers: [], payout: 'No payout — all picked golfers missed the cut',
+    };
+  }
+
+  if (winners.length === 1) {
+    return {
+      resolved: true, picks, type: 'winner',
+      winner: winners[0], winners, losers,
+      payout: `+$${losers.length * 5}`,
+    };
+  }
+
+  if (winners.length === 2) {
+    return {
+      resolved: true, picks, type: 'two_way_tie',
+      winners, losers,
+      payout: `${winners.join(' & ')} each collect $5 from ${losers[0]}`,
+    };
+  }
+
+  return { resolved: true, picks, type: 'no_winner', winners: [], losers: users, payout: 'No payout' };
+}
+
 export function determineBetWinner(scores) {
   const players = Object.keys(scores);
   const validScores = players.filter((p) => scores[p] !== null);
@@ -124,6 +208,9 @@ export async function computeLeaderboard(users, meta) {
     result.wc = { wcPicks, resolved: false };
   }
 
+  // Missed cut side bet
+  result.missedCut = await computeMissedCutResult(users);
+
   return result;
 }
 
@@ -226,6 +313,15 @@ export function countGreenJackets(leaderboard, users) {
   const wc = leaderboard.wc;
   if (wc?.resolved && wc.wcWinners) {
     for (const w of wc.wcWinners) {
+      if (counts[w] !== undefined) counts[w]++;
+    }
+  }
+
+  // Missed cut
+  const mc = leaderboard.missedCut;
+  if (mc?.resolved && mc.type !== 'no_winner' && mc.type !== 'three_way_tie') {
+    const mcWinners = mc.type === 'winner' ? [mc.winner] : mc.winners || [];
+    for (const w of mcWinners) {
       if (counts[w] !== undefined) counts[w]++;
     }
   }

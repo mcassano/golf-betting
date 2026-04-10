@@ -212,7 +212,98 @@ describe('computeWCResult', () => {
   });
 });
 
-import { countGreenJackets } from '../services/betting.js';
+import { countGreenJackets, computeMissedCutResult } from '../services/betting.js';
+
+// ── computeMissedCutResult ──────────────────────────────────────────────────
+
+describe('computeMissedCutResult', () => {
+  it('returns unresolved when no picks exist', async () => {
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(false);
+  });
+
+  it('returns unresolved when cut has not been made yet (pre-day3)', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day2' };
+    setScore('Cantlay', 1, '72');
+    setScore('Lowry', 1, '74');
+    setScore('Thomas', 1, '71');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(false);
+  });
+
+  it('resolves with single winner when one golfer misses the cut', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day3' };
+    setScore('Cantlay', 1, '72');
+    setScore('Cantlay', 2, '74');
+    setScore('Lowry', 1, '80');
+    setScore('Lowry', 2, 'CUT');
+    setScore('Thomas', 1, '70');
+    setScore('Thomas', 2, '71');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(true);
+    expect(result.type).toBe('winner');
+    expect(result.winner).toBe('Caleb');
+    expect(result.losers).toEqual(['Mike', 'Marshall']);
+    expect(result.payout).toBe('+$10');
+  });
+
+  it('resolves with two-way tie when two golfers miss the cut', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    setScore('Cantlay', 2, 'CUT');
+    setScore('Lowry', 2, 'CUT');
+    setScore('Thomas', 1, '70');
+    setScore('Thomas', 2, '71');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(true);
+    expect(result.type).toBe('two_way_tie');
+    expect(result.winners).toEqual(['Mike', 'Caleb']);
+    expect(result.losers).toEqual(['Marshall']);
+  });
+
+  it('resolves as three-way tie when all golfers miss the cut', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    setScore('Cantlay', 2, 'CUT');
+    setScore('Lowry', 2, 'CUT');
+    setScore('Thomas', 2, 'CUT');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(true);
+    expect(result.type).toBe('three_way_tie');
+    expect(result.payout).toContain('No payout');
+  });
+
+  it('resolves as no_winner when no golfer missed the cut (day3+)', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day3' };
+    setScore('Cantlay', 1, '70');
+    setScore('Cantlay', 2, '71');
+    setScore('Lowry', 1, '69');
+    setScore('Lowry', 2, '72');
+    setScore('Thomas', 1, '68');
+    setScore('Thomas', 2, '70');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(true);
+    expect(result.type).toBe('no_winner');
+    expect(result.winners).toEqual([]);
+  });
+
+  it('resolves early when CUT scores appear even before day3 status', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day2' };
+    setScore('Lowry', 2, 'CUT');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(true);
+    expect(result.type).toBe('winner');
+    expect(result.winner).toBe('Caleb');
+  });
+});
 
 // ── countGreenJackets ───────────────────────────────────────────────────────
 
@@ -339,6 +430,39 @@ describe('countGreenJackets', () => {
     };
     expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
       Mike: 0, Caleb: 1, Marshall: 0,
+    });
+  });
+
+  it('counts missed cut winner', () => {
+    const lb = {
+      wcDaily: {},
+      wc: { resolved: false },
+      missedCut: { resolved: true, type: 'winner', winner: 'Caleb', winners: ['Caleb'] },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 1, Marshall: 0,
+    });
+  });
+
+  it('counts missed cut two-way tie winners', () => {
+    const lb = {
+      wcDaily: {},
+      wc: { resolved: false },
+      missedCut: { resolved: true, type: 'two_way_tie', winners: ['Mike', 'Marshall'] },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 1, Caleb: 0, Marshall: 1,
+    });
+  });
+
+  it('does not count missed cut no_winner or three_way_tie', () => {
+    const lb = {
+      wcDaily: {},
+      wc: { resolved: false },
+      missedCut: { resolved: true, type: 'no_winner', winners: [] },
+    };
+    expect(countGreenJackets(lb, ['Mike', 'Caleb', 'Marshall'])).toEqual({
+      Mike: 0, Caleb: 0, Marshall: 0,
     });
   });
 });

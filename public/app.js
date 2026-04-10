@@ -879,11 +879,10 @@ window.pickWC = async function(golfer) {
 // ── View: Leaderboard ─────────────────────────────────────────────────────────
 
 async function renderLeaderboard(container) {
-  const [lb, users, tournament, mcData, scores] = await Promise.all([
+  const [lb, users, tournament, scores] = await Promise.all([
     api('GET', '/leaderboard'),
     api('GET', '/users'),
     api('GET', '/tournament'),
-    api('GET', '/missedcut').catch(() => ({})),
     api('GET', '/scores'),
   ]);
 
@@ -965,22 +964,49 @@ async function renderLeaderboard(container) {
     </div>`;
   }
 
-  // Missed cut bet
-  if (Object.keys(mcData).length > 0) {
+  // Missed cut bet card
+  const mc = lb.missedCut;
+  if (mc && Object.keys(mc.picks || {}).length > 0) {
+    const mcResolved = mc.resolved;
+    const isWinner = (p) => mc.winner === p || (mc.winners && mc.winners.includes(p));
     html += `
     <div class="card mb-4">
-      <div class="section-title">🎲 Missed Cut Side Bet</div>
-      ${Object.entries(mcData).map(([player, golfer]) => {
-        const golferScores = scores[golfer] || {};
-        const isCut = Object.values(golferScores).some((v) => v === 'CUT');
-        const statusBadge = isCut
-          ? '<span class="badge badge-cut">CUT</span>'
-          : '<span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0">Active</span>';
-        return `<div class="flex items-center justify-between py-1.5 border-b border-gray-50">
-          <span class="text-sm font-medium">${player}</span>
-          <span class="text-sm text-gray-700">${golfer} ${statusBadge}</span>
-        </div>`;
-      }).join('')}
+      <div class="section-title">🎲 Missed Cut Side Bet${!mcResolved ? ' <span class="badge badge-wd ml-1">Pending</span>' : ''}</div>
+      <table class="score-table w-full">
+        <thead><tr><th>Player</th><th>Golfer</th><th>Result</th></tr></thead>
+        <tbody>
+          ${users.filter((u) => mc.picks[u]).map((u) => {
+            const golfer = mc.picks[u];
+            const golferScores = scores[golfer] || {};
+            const isCut = Object.values(golferScores).some((v) => v === 'CUT');
+            const statusBadge = isCut
+              ? '<span class="badge badge-cut">CUT</span>'
+              : '<span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0">Active</span>';
+            let resultCell = '<span class="text-gray-400">—</span>';
+            if (mcResolved) {
+              if (isWinner(u) && mc.type === 'winner') {
+                resultCell = `<span class="badge badge-winner">WIN +$${mc.losers.length * 5}</span>`;
+              } else if (isWinner(u) && mc.type === 'two_way_tie') {
+                resultCell = '<span class="badge badge-winner">TIE +$5</span>';
+              } else if (mc.type === 'three_way_tie') {
+                resultCell = '<span class="text-gray-400 text-xs">$0</span>';
+              } else if (mc.type === 'no_winner') {
+                resultCell = '<span class="text-gray-400 text-xs">$0</span>';
+              } else {
+                resultCell = '<span class="text-gray-400 text-xs">-$5</span>';
+              }
+            }
+            return `<tr>
+              <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner text-xs">you</span>' : ''}</td>
+              <td>${golfer} ${statusBadge}</td>
+              <td>${resultCell}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      ${!mcResolved ? '<p class="text-xs text-amber-600 mt-2">Awaiting the cut after Round 2.</p>' : ''}
+      ${mcResolved && mc.type === 'three_way_tie' ? '<p class="text-xs text-gray-500 mt-2">All picked golfers missed the cut — no payout.</p>' : ''}
+      ${mcResolved && mc.type === 'no_winner' ? '<p class="text-xs text-gray-500 mt-2">No picked golfer missed the cut — no payout.</p>' : ''}
     </div>`;
   }
 
@@ -1078,20 +1104,32 @@ function computePayoutSummary(lb, users) {
     });
   }
 
+  // Missed Cut
+  const mc = lb.missedCut;
+  if (mc?.resolved && mc.type !== 'no_winner' && mc.type !== 'three_way_tie') {
+    if (mc.type === 'winner') {
+      summary[mc.winner].won += mc.losers.length * 5;
+      mc.losers.forEach((l) => { summary[l].lost += 5; });
+    } else if (mc.type === 'two_way_tie') {
+      mc.winners.forEach((w) => { summary[w].won += 5; });
+      mc.losers.forEach((l) => { summary[l].lost += 10; });
+    }
+  }
+
   return summary;
 }
 
 // ── View: Scoreboard ──────────────────────────────────────────────────────────
 
 async function renderScoreboard(container) {
-  const [scores, teams, wcData, tournament, mcData, lb] = await Promise.all([
+  const [scores, teams, wcData, tournament, lb] = await Promise.all([
     api('GET', '/scores'),
     api('GET', '/teams'),
     api('GET', '/wc'),
     api('GET', '/tournament'),
-    api('GET', '/missedcut').catch(() => ({})),
     api('GET', '/leaderboard').catch(() => ({})),
   ]);
+  const mcData = lb.missedCut?.picks || {};
 
   // Build ownership map
   const ownership = {}; // golfer → player
@@ -1165,6 +1203,11 @@ async function renderScoreboard(container) {
     }
     if (lb.wc?.resolved && lb.wc.wcWinners) {
       for (const w of lb.wc.wcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
+    }
+    const mcBet = lb.missedCut;
+    if (mcBet?.resolved && mcBet.type !== 'no_winner' && mcBet.type !== 'three_way_tie') {
+      const mcWinners = mcBet.type === 'winner' ? [mcBet.winner] : mcBet.winners || [];
+      for (const w of mcWinners) { if (jacketCounts[w] !== undefined) jacketCounts[w]++; }
     }
 
     const totalJackets = Object.values(jacketCounts).reduce((a, b) => a + b, 0);
@@ -1254,6 +1297,25 @@ async function renderScoreboard(container) {
         html += `<td class="text-green-700 font-semibold text-sm">${wc.wcWinners.join(' & ')}</td>`;
       } else {
         html += `<td class="text-gray-500 text-sm">No winner</td>`;
+      }
+      html += `</tr>`;
+    }
+
+    // Missed Cut row
+    if (mcBet && Object.keys(mcBet.picks || {}).length > 0) {
+      html += `<tr><td colspan="${betLabels.length + 1}" class="border-t border-gray-100"></td></tr>`;
+      html += `<tr><th></th><th colspan="${betLabels.length}">Missed Cut</th></tr>`;
+      html += `<tr><td></td>`;
+      if (!mcBet.resolved) {
+        html += `<td colspan="${betLabels.length}" class="text-gray-400 italic text-sm">pending</td>`;
+      } else if (mcBet.type === 'no_winner') {
+        html += `<td colspan="${betLabels.length}" class="text-gray-500 text-sm">No winner</td>`;
+      } else if (mcBet.type === 'three_way_tie') {
+        html += `<td colspan="${betLabels.length}" class="text-gray-500 text-sm">All missed — no payout</td>`;
+      } else if (mcBet.type === 'winner') {
+        html += `<td colspan="${betLabels.length}" class="text-green-700 font-semibold text-sm">${mcBet.winner} (${mcBet.picks[mcBet.winner]} CUT)</td>`;
+      } else if (mcBet.type === 'two_way_tie') {
+        html += `<td colspan="${betLabels.length}" class="text-green-700 font-semibold text-sm">${mcBet.winners.join(' & ')}</td>`;
       }
       html += `</tr>`;
     }
