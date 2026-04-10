@@ -1233,21 +1233,38 @@ async function renderScoreboard(container) {
             <th>Total</th>
           </tr></thead>
           <tbody>
-            ${golfers.map((g) => {
-              const s = scores[g] || {};
-              const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
-              const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, tournament?.par || 72);
-              return `<tr>
-                <td class="font-medium">
-                  ${g}
-                  ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
-                </td>
-                ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${count ? diffToParStr(diff) : '<span class="text-gray-300">—</span>'}</td>
-              </tr>`;
-            }).join('')}
+            ${(() => {
+              const p = tournament?.par || 72;
+              const dayTotals = [0, 0, 0, 0];
+              const dayCounts = [0, 0, 0, 0];
+              const rows = golfers.map((g) => {
+                const s = scores[g] || {};
+                const dayScores = [s.day1, s.day2, s.day3, s.day4];
+                const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
+                const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+                for (let d = 0; d < 4; d++) {
+                  const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
+                  if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
+                }
+                const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
+                return `<tr>
+                  <td class="font-medium">
+                    ${g}
+                    ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
+                  </td>
+                  ${dayScores.map((v, idx) => `<td>${dayCell(v, p, dayThrus[idx], dayRels[idx])}</td>`).join('')}
+                  <td class="font-semibold">${count ? diffToParStr(diff) : '<span class="text-gray-300">—</span>'}</td>
+                </tr>`;
+              });
+              const totalDiff = dayTotals.reduce((a, b) => a + b, 0);
+              const totalCount = dayCounts.reduce((a, b) => a + b, 0);
+              rows.push(`<tr class="border-t border-gray-200 font-semibold">
+                <td>Total</td>
+                ${dayTotals.map((t, i) => `<td>${dayCounts[i] ? diffToParStr(t) : '<span class="text-gray-300">—</span>'}</td>`).join('')}
+                <td>${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
+              </tr>`);
+              return rows.join('');
+            })()}
           </tbody>
         </table>
       </div>
@@ -1267,18 +1284,35 @@ async function renderScoreboard(container) {
         <table class="score-table w-full">
           <thead><tr><th>Golfer</th><th>Day 1</th><th>Day 2</th><th>Day 3</th><th>Day 4</th><th>Total</th></tr></thead>
           <tbody>
-            ${scored.map((g) => {
-              const s = scores[g] || {};
-              const dayScores = [s.day1, s.day2, s.day3, s.day4];
-              const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
-              const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-              const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, tournament?.par || 72);
-              return `<tr>
-                <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
-                ${dayScores.map((v, idx) => `<td>${dayCell(v, tournament?.par || 72, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                <td class="font-semibold">${count ? diffToParStr(diff) : '—'}</td>
-              </tr>`;
-            }).join('')}
+            ${(() => {
+              const p = tournament?.par || 72;
+              const dayTotals = [0, 0, 0, 0];
+              const dayCounts = [0, 0, 0, 0];
+              const rows = scored.map((g) => {
+                const s = scores[g] || {};
+                const dayScores = [s.day1, s.day2, s.day3, s.day4];
+                const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
+                const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+                for (let d = 0; d < 4; d++) {
+                  const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
+                  if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
+                }
+                const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
+                return `<tr>
+                  <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
+                  ${dayScores.map((v, idx) => `<td>${dayCell(v, p, dayThrus[idx], dayRels[idx])}</td>`).join('')}
+                  <td class="font-semibold">${count ? diffToParStr(diff) : '—'}</td>
+                </tr>`;
+              });
+              const totalDiff = dayTotals.reduce((a, b) => a + b, 0);
+              const totalCount = dayCounts.reduce((a, b) => a + b, 0);
+              rows.push(`<tr class="border-t border-gray-200 font-semibold">
+                <td>Total</td>
+                ${dayTotals.map((t, i) => `<td>${dayCounts[i] ? diffToParStr(t) : '<span class="text-gray-300">—</span>'}</td>`).join('')}
+                <td>${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
+              </tr>`);
+              return rows.join('');
+            })()}
           </tbody>
         </table>
       </div>
