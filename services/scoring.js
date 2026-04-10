@@ -65,10 +65,10 @@ export async function teamScoreForDay(player, dayN, bestN = 6) {
   if (!golfers) return { total: null, partial: true };
   const scoreKeys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
   const { values: rawScores, thruValues } = await fetchWithThru(scoreKeys);
-  const anyInProgress = rawScores.some((score, i) => isInProgress(score, thruValues[i]));
-  const result = bestNScore(rawScores, bestN);
-  if (anyInProgress) result.partial = true;
-  return result;
+  const effectiveScores = rawScores.map((score, i) =>
+    isInProgress(score, thruValues[i]) ? null : score
+  );
+  return bestNScore(effectiveScores, bestN);
 }
 
 // Day 3 & 4: sum of best 2 golfers that day
