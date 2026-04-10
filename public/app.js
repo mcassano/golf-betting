@@ -24,6 +24,7 @@ async function api(method, path, body) {
 
 function el(id) { return document.getElementById(id); }
 
+function stripOdds(name) { return name.replace(/\s\+\d+$/, ''); }
 
 // Render a round score with thru info.
 // Completed: "-5 F 67"  In-progress: "-3 thru 12"  Not started: "—"
@@ -1191,9 +1192,9 @@ async function renderScoreboard(container) {
           html += `<td class="text-gray-400 italic text-sm">pending</td>`;
         } else if (wd.type === 'no_wc_winner') {
           let cell = `<div class="text-gray-500 text-sm">No winner</div>`;
-          cell += `<div class="text-xs text-gray-400">Low: ${wd.lowGolfers[0]} ${relStr(wd.minScore, 1)}</div>`;
+          cell += `<div class="text-xs text-gray-400">Low: ${stripOdds(wd.lowGolfers[0])} ${relStr(wd.minScore, 1)}</div>`;
           if (wd.lowestWC) {
-            cell += `<div class="text-xs text-gray-400">Low WC: ${wd.lowestWC.golfer} ${relStr(wd.lowestWC.score, 1)}</div>`;
+            cell += `<div class="text-xs text-gray-400">Low WC: ${stripOdds(wd.lowestWC.golfer)} ${relStr(wd.lowestWC.score, 1)}</div>`;
           }
           html += `<td>${cell}</td>`;
         } else if (wd.type === 'three_way_tie') {
