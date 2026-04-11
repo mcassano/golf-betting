@@ -77,6 +77,26 @@ export async function teamScoreBest2ForDay(player, dayN) {
   if (!golfers) return { total: null, partial: true };
   const scoreKeys = golfers.map((g) => `scores:${encodeKey(g)}:day${dayN}`);
   const { values: rawValues, thruValues } = await fetchWithThru(scoreKeys);
+
+  // For days 3+, check if golfers missed the cut on earlier days
+  let cutSet = null;
+  if (dayN >= 3) {
+    const cutKeys = [];
+    for (const g of golfers) {
+      const k = encodeKey(g);
+      for (let d = 1; d < dayN; d++) cutKeys.push(`scores:${k}:day${d}`);
+    }
+    const cutVals = cutKeys.length ? await mget(...cutKeys) : [];
+    cutSet = new Set();
+    let ci = 0;
+    for (const g of golfers) {
+      for (let d = 1; d < dayN; d++) {
+        if (cutVals[ci] === 'CUT') cutSet.add(g);
+        ci++;
+      }
+    }
+  }
+
   const scores = [];
   let partial = false;
   for (let i = 0; i < rawValues.length; i++) {
@@ -88,7 +108,7 @@ export async function teamScoreBest2ForDay(player, dayN) {
     }
     const score = resolveScore(raw);
     if (score === null) {
-      if (!isWD(raw)) partial = true;
+      if (!isWD(raw) && !(cutSet && cutSet.has(golfers[i]))) partial = true;
       scores.push(PENALTY);
     } else {
       scores.push(score);
@@ -115,15 +135,17 @@ export async function teamOverallScore(player) {
   let i = 0;
   for (const golfer of golfers) {
     let cum = 0;
+    let golferCut = false;
     for (let day = 1; day <= 4; day++) {
       const raw = values[i];
+      if (raw === 'CUT') golferCut = true;
       if (isInProgress(raw, thruValues[i])) {
         partial = true;
         cum += PENALTY;
       } else {
         const score = resolveScore(raw);
         if (score === null) {
-          if (!isWD(raw)) partial = true;
+          if (!isWD(raw) && !golferCut) partial = true;
           cum += PENALTY;
         } else {
           cum += score;
@@ -211,12 +233,33 @@ export async function allSelectedScoresForDay(users, dayN) {
   }
 
   const { values, thruValues } = await fetchWithThru(scoreKeys);
+
+  // For days 3+, identify golfers who missed the cut on earlier days
+  let cutSet = null;
+  if (dayN >= 3) {
+    const cutKeys = [];
+    const cutGolfers = [];
+    for (const { golfer } of lookups) {
+      const k = encodeKey(golfer);
+      for (let d = 1; d < dayN; d++) {
+        cutKeys.push(`scores:${k}:day${d}`);
+        cutGolfers.push(golfer);
+      }
+    }
+    const cutVals = cutKeys.length ? await mget(...cutKeys) : [];
+    cutSet = new Set();
+    for (let ci = 0; ci < cutVals.length; ci++) {
+      if (cutVals[ci] === 'CUT') cutSet.add(cutGolfers[ci]);
+    }
+  }
+
   const entries = [];
   let expected = 0;
   let partial = false;
   for (let i = 0; i < lookups.length; i++) {
     const raw = values[i];
-    if (!isWD(raw)) expected++;
+    const isCut = cutSet && cutSet.has(lookups[i].golfer);
+    if (!isWD(raw) && !isCut) expected++;
     if (isInProgress(raw, thruValues[i])) partial = true;
     const score = resolveScore(raw);
     if (score !== null) {

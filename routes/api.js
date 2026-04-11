@@ -394,8 +394,17 @@ router.post('/admin/scores', requireUser, async (req, res) => {
   const lockId = `${key}:day${dayN}`;
   if (!locked.includes(lockId)) {
     locked.push(lockId);
-    await setJSON('scores:locked', locked);
   }
+  // Propagate CUT to remaining days (like WD) so they don't block completion
+  if (val === 'CUT') {
+    for (let d = dayN + 1; d <= 4; d++) {
+      await set(`scores:${key}:day${d}`, 'CUT');
+      await del(`scores:${key}:day${d}:thru`);
+      const lid = `${key}:day${d}`;
+      if (!locked.includes(lid)) locked.push(lid);
+    }
+  }
+  await setJSON('scores:locked', locked);
   emit('scores:updated', { golfer, day: dayN, score: val });
   res.json({ ok: true });
 });
@@ -434,6 +443,15 @@ router.post('/admin/scores/bulk', requireUser, async (req, res) => {
     await set(`scores:${key}:day${dayN}`, val);
     const lockId = `${key}:day${dayN}`;
     if (!locked.includes(lockId)) locked.push(lockId);
+    // Propagate CUT to remaining days so they don't block completion
+    if (val === 'CUT') {
+      for (let d = dayN + 1; d <= 4; d++) {
+        await set(`scores:${key}:day${d}`, 'CUT');
+        await del(`scores:${key}:day${d}:thru`);
+        const lid = `${key}:day${d}`;
+        if (!locked.includes(lid)) locked.push(lid);
+      }
+    }
   }
   await setJSON('scores:locked', locked);
   emit('scores:updated', { bulk: true, day: dayN });
