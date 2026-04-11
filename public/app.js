@@ -28,7 +28,8 @@ function stripOdds(name) { return name.replace(/\s\+\d+$/, ''); }
 
 // Render a round score with thru info.
 // Completed: "-5 F 67"  In-progress: "-3 thru 12"  Not started: "—"
-function dayCell(v, par, thru, rel) {
+function dayCell(v, par, thru, rel, missedCut = false) {
+  if (missedCut) return '<span class="cell-mc" title="Missed cut">💩</span>';
   if (v === undefined || v === null || v === '') return '<span class="text-gray-300">—</span>';
   if (v === 'CUT') return '<span class="badge badge-cut">CUT</span>';
   if (v === 'WD') return '<span class="badge badge-wd">WD</span>';
@@ -294,22 +295,31 @@ async function renderAdmin(container) {
     const draftedNames = new Set([...Object.values(teams).flat(), ...Object.values(wcData).filter(Boolean)]);
     const draftedPlayers = players.filter((p) => draftedNames.has(p.name));
     const currentDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 }[status] || 1;
+    const par = tournament?.par || 72;
     const rows = draftedPlayers.map((p) => {
       const s = scores[p.name] || {};
+      // Missed cut: CUT marker anywhere, OR R1+R2 raw total ≥ 2*par+5
+      const d1 = parseInt(s.day1, 10);
+      const d2 = parseInt(s.day2, 10);
+      const hasCutMarker = [s.day1, s.day2, s.day3, s.day4].some((v) => v === 'CUT');
+      const r1r2Sum = (!isNaN(d1) && !isNaN(d2)) ? d1 + d2 : null;
+      const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum - 2 * par >= 5);
       const cells = [1, 2, 3, 4].map((d) => {
         const val = s[`day${d}`] || '';
         const thru = s[`day${d}Thru`];
         const isActive = d === currentDay;
         const isInProgress = val && val !== 'CUT' && val !== 'WD' && thru && thru !== 'F' && thru !== '18';
         const borderColor = isInProgress ? 'border-yellow-400 bg-yellow-50' : isActive ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white';
-        return `<td class="p-1">
+        const isR34MissedCut = missedCut && (d === 3 || d === 4);
+        const tdCls = isR34MissedCut ? 'p-1 cell-missed-cut' : 'p-1';
+        return `<td class="${tdCls}">
           <div class="relative inline-block">
             <input
               type="text"
               data-golfer="${p.name.replace(/"/g, '&quot;')}"
               data-day="${d}"
               value="${val}"
-              placeholder="${isActive ? '—' : ''}"
+              placeholder="${isR34MissedCut ? '💩' : (isActive ? '—' : '')}"
               onblur="saveScoreCell(this)"
               onkeydown="scoreGridKeydown(event, this)"
               class="score-cell w-16 text-center border rounded px-1 py-0.5 text-sm font-mono ${borderColor} ${val === 'CUT' || val === 'WD' ? 'text-red-500' : ''}"
@@ -1356,17 +1366,25 @@ async function renderScoreboard(container) {
                   dayDiffs.push(count ? diff : null);
                   dayHas.push(count > 0);
                 }
+                // Missed cut: explicit CUT marker, OR R1+R2 to-par ≥ +5 (same +5 rule ESPN uses)
+                const hasCutMarker = dayScores.some((v) => v === 'CUT');
+                const r1r2Sum = (dayDiffs[0] != null && dayDiffs[1] != null) ? dayDiffs[0] + dayDiffs[1] : null;
+                const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum >= 5);
                 const { diff: totalDiff, count: totalCount } = sumAllRelative(dayScores, dayThrus, dayRels, p);
-                return { g, s, dayScores, dayThrus, dayRels, dayDiffs, dayHas, totalDiff, totalCount };
+                return { g, s, dayScores, dayThrus, dayRels, dayDiffs, dayHas, totalDiff, totalCount, missedCut };
               });
 
-              const rows = perGolfer.map(({ g, dayScores, dayThrus, dayRels, totalDiff, totalCount }) => {
+              const rows = perGolfer.map(({ g, dayScores, dayThrus, dayRels, totalDiff, totalCount, missedCut }) => {
                 return `<tr>
                   <td class="font-medium">
                     ${g}
                     ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                   </td>
-                  ${dayScores.map((v, idx) => `<td>${dayCell(v, p, dayThrus[idx], dayRels[idx])}</td>`).join('')}
+                  ${dayScores.map((v, idx) => {
+                    const isR34MissedCut = missedCut && (idx === 2 || idx === 3);
+                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    return `<td${tdCls}>${dayCell(v, p, dayThrus[idx], dayRels[idx], isR34MissedCut)}</td>`;
+                  }).join('')}
                   <td class="font-semibold">${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
                 </tr>`;
               });
@@ -1461,14 +1479,24 @@ async function renderScoreboard(container) {
                 const dayScores = [s.day1, s.day2, s.day3, s.day4];
                 const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
                 const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+                const perDay = [];
                 for (let d = 0; d < 4; d++) {
                   const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
+                  perDay.push({ diff: count ? diff : null });
                   if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
                 }
+                // Missed cut: CUT marker anywhere, OR R1+R2 to-par ≥ +5
+                const hasCutMarker = dayScores.some((v) => v === 'CUT');
+                const r1r2Sum = (perDay[0].diff != null && perDay[1].diff != null) ? perDay[0].diff + perDay[1].diff : null;
+                const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum >= 5);
                 const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
                 return `<tr>
                   <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
-                  ${dayScores.map((v, idx) => `<td>${dayCell(v, p, dayThrus[idx], dayRels[idx])}</td>`).join('')}
+                  ${dayScores.map((v, idx) => {
+                    const isR34MissedCut = missedCut && (idx === 2 || idx === 3);
+                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    return `<td${tdCls}>${dayCell(v, p, dayThrus[idx], dayRels[idx], isR34MissedCut)}</td>`;
+                  }).join('')}
                   <td class="font-semibold">${count ? diffToParStr(diff) : '—'}</td>
                 </tr>`;
               });
