@@ -1341,33 +1341,82 @@ async function renderScoreboard(container) {
           <tbody>
             ${(() => {
               const p = tournament?.par || 72;
-              const dayTotals = [0, 0, 0, 0];
-              const dayCounts = [0, 0, 0, 0];
-              const rows = golfers.map((g) => {
+              // Per-golfer day diffs + 4-day total. Days 1/2 total cells sum all golfers;
+              // Days 3/4 use best-2 single-day diffs, and the grand total uses best-2 of
+              // 4-day cumulative diffs — matching the bet conditions for rounds 3, 4 and overall.
+              const perGolfer = golfers.map((g) => {
                 const s = scores[g] || {};
                 const dayScores = [s.day1, s.day2, s.day3, s.day4];
                 const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
                 const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
+                const dayDiffs = [];
+                const dayHas = [];
                 for (let d = 0; d < 4; d++) {
                   const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
-                  if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
+                  dayDiffs.push(count ? diff : null);
+                  dayHas.push(count > 0);
                 }
-                const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
+                const { diff: totalDiff, count: totalCount } = sumAllRelative(dayScores, dayThrus, dayRels, p);
+                return { g, s, dayScores, dayThrus, dayRels, dayDiffs, dayHas, totalDiff, totalCount };
+              });
+
+              const rows = perGolfer.map(({ g, dayScores, dayThrus, dayRels, totalDiff, totalCount }) => {
                 return `<tr>
                   <td class="font-medium">
                     ${g}
                     ${wcSet.has(g) ? `<span class="badge badge-wc ml-1">WC</span>` : ''}
                   </td>
                   ${dayScores.map((v, idx) => `<td>${dayCell(v, p, dayThrus[idx], dayRels[idx])}</td>`).join('')}
-                  <td class="font-semibold">${count ? diffToParStr(diff) : '<span class="text-gray-300">—</span>'}</td>
+                  <td class="font-semibold">${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
                 </tr>`;
               });
-              const totalDiff = dayTotals.reduce((a, b) => a + b, 0);
-              const totalCount = dayCounts.reduce((a, b) => a + b, 0);
+
+              // Day 1/2: sum across all golfers. Day 3/4: best 2 single-day diffs.
+              const bestTwoNote = '<div class="text-[10px] font-normal text-gray-400 leading-tight">*best two</div>';
+              const allScoresNote = '<div class="text-[10px] font-normal text-gray-400 leading-tight">*all scores</div>';
+              const dayTotalCells = [];
+              for (let d = 0; d < 4; d++) {
+                const note = d < 2 ? allScoresNote : bestTwoNote;
+                const valid = perGolfer.filter((gr) => gr.dayHas[d]).map((gr) => gr.dayDiffs[d]);
+                if (valid.length === 0) {
+                  dayTotalCells.push(`${note}<span class="text-gray-300">—</span>`);
+                  continue;
+                }
+                if (d < 2) {
+                  const sum = valid.reduce((a, b) => a + b, 0);
+                  dayTotalCells.push(`${note}${diffToParStr(sum)}`);
+                } else {
+                  if (valid.length < 2) {
+                    dayTotalCells.push(`${note}<span class="text-gray-300">—</span>`);
+                  } else {
+                    const sorted = [...valid].sort((a, b) => a - b);
+                    dayTotalCells.push(`${note}${diffToParStr(sorted[0] + sorted[1])}`);
+                  }
+                }
+              }
+
+              // Grand total: best 2 of 4-day cumulative diffs. Restrict to golfers tied
+              // for the max rounds-played on this team so CUT/WD golfers don't poison
+              // the pick with a partial-round diff that looks artificially low.
+              const maxTotalCount = Math.max(0, ...perGolfer.map((gr) => gr.totalCount));
+              const eligibleTotals = perGolfer
+                .filter((gr) => gr.totalCount > 0 && gr.totalCount === maxTotalCount)
+                .map((gr) => gr.totalDiff)
+                .sort((a, b) => a - b);
+              let grandCell;
+              if (eligibleTotals.length === 0) {
+                grandCell = '<span class="text-gray-300">—</span>';
+              } else if (eligibleTotals.length < 2) {
+                grandCell = diffToParStr(eligibleTotals[0]);
+              } else {
+                grandCell = diffToParStr(eligibleTotals[0] + eligibleTotals[1]);
+              }
+              grandCell = `${bestTwoNote}${grandCell}`;
+
               rows.push(`<tr class="border-t border-gray-200 font-semibold">
                 <td>Total</td>
-                ${dayTotals.map((t, i) => `<td>${dayCounts[i] ? diffToParStr(t) : '<span class="text-gray-300">—</span>'}</td>`).join('')}
-                <td>${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
+                ${dayTotalCells.map((c) => `<td>${c}</td>`).join('')}
+                <td>${grandCell}</td>
               </tr>`);
               // WC golfer row (not included in totals)
               const wcGolfer = wcData[user];
