@@ -25,6 +25,31 @@ export function toParStr(total, played, par) {
   return diffToParStr(total - played * par);
 }
 
+// Did this golfer miss the cut? True if any day is flagged 'CUT', OR if
+// R1+R2 to-par is ≥ +5 (the Masters cut rule). Accepts a `scores` object
+// shaped like { day1, day2, day1Rel, day2Rel, day1Thru, day2Thru, ... }.
+// Uses ESPN rel values when available and only falls back to gross-par
+// for a finished round (so an in-progress R1 or R2 never triggers).
+export function didMissCut(scores, par) {
+  if (!scores) return false;
+  const days = [scores.day1, scores.day2, scores.day3, scores.day4];
+  if (days.some((v) => v === 'CUT')) return true;
+
+  const dayDiff = (raw, rel, thru) => {
+    if (raw === undefined || raw === null || raw === '' || raw === 'CUT' || raw === 'WD') return null;
+    const r = parseRel(rel);
+    if (r !== null) return r;
+    if (isRoundInProgress(thru)) return null;
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? null : n - par;
+  };
+
+  const d1 = dayDiff(scores.day1, scores.day1Rel, scores.day1Thru);
+  const d2 = dayDiff(scores.day2, scores.day2Rel, scores.day2Thru);
+  if (d1 === null || d2 === null) return false;
+  return d1 + d2 >= 5;
+}
+
 // Sum all rounds (including in-progress) using ESPN rel values where available,
 // falling back to gross strokes minus par for completed rounds.
 export function sumAllRelative(dayScores, dayThrus, dayRels, par) {

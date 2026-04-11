@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRoundInProgress, parseRel, diffToParStr, toParStr, sumAllRelative } from '../public/scoring-utils.js';
+import { isRoundInProgress, parseRel, diffToParStr, toParStr, sumAllRelative, didMissCut } from '../public/scoring-utils.js';
 
 // ── isRoundInProgress ───────────────────────────────────────────────────────
 
@@ -146,5 +146,81 @@ describe('sumAllRelative', () => {
     const thrus = ['F', 'F'];
     const rels = ['-4', null]; // first has rel, second falls back to gross
     expect(sumAllRelative(scores, thrus, rels, par)).toEqual({ diff: -2, count: 2 });
+  });
+});
+
+// ── didMissCut ──────────────────────────────────────────────────────────────
+
+describe('didMissCut', () => {
+  const par = 72;
+
+  it('returns false for a made-cut golfer (R1+R2 < +5)', () => {
+    const s = { day1: '71', day2: '72', day1Rel: '-1', day2Rel: 'E', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(false);
+  });
+
+  it('returns true at the +5 threshold via rel values', () => {
+    const s = { day1: '75', day2: '74', day1Rel: '+3', day2Rel: '+2', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('returns true above +5 via rel values', () => {
+    // Bryson at the Masters: 76 + 74 = +6
+    const s = { day1: '76', day2: '74', day1Rel: '+4', day2Rel: '+2', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('returns false just below +5', () => {
+    // Jon Rahm at the Masters: 78 + 70 = +4
+    const s = { day1: '78', day2: '70', day1Rel: '+6', day2Rel: '-2', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(false);
+  });
+
+  it('returns true on explicit CUT marker even without numeric scores', () => {
+    const s = { day1: '76', day2: '78', day3: 'CUT', day4: 'CUT' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('returns true when CUT appears alongside valid R1/R2 scores', () => {
+    const s = { day1: '75', day2: '75', day3: 'CUT' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('falls back to gross-minus-par when rel is absent', () => {
+    const s = { day1: '76', day2: '74', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('does not trigger when R1 is still in progress (no rel)', () => {
+    const s = { day1: '40', day2: '74', day1Thru: '9', day2Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(false);
+  });
+
+  it('does not trigger when R2 is still in progress (no rel)', () => {
+    const s = { day1: '76', day2: '40', day1Thru: 'F', day2Thru: '9' };
+    expect(didMissCut(s, par)).toBe(false);
+  });
+
+  it('respects rel during an in-progress round (rel is authoritative)', () => {
+    // R2 in progress but ESPN rel already says +3 thru 14; R1 final at +3 → sum +6
+    const s = { day1: '75', day2: '55', day1Rel: '+3', day2Rel: '+3', day1Thru: 'F', day2Thru: '14' };
+    expect(didMissCut(s, par)).toBe(true);
+  });
+
+  it('returns false when R2 is missing entirely', () => {
+    const s = { day1: '76', day1Rel: '+4', day1Thru: 'F' };
+    expect(didMissCut(s, par)).toBe(false);
+  });
+
+  it('returns false for empty/undefined scores object', () => {
+    expect(didMissCut({}, par)).toBe(false);
+    expect(didMissCut(undefined, par)).toBe(false);
+    expect(didMissCut(null, par)).toBe(false);
+  });
+
+  it('ignores WD in R1/R2 slots (does not trigger miss)', () => {
+    // WD before cut — not a miss, they withdrew
+    const s = { day1: '76', day2: 'WD', day1Rel: '+4' };
+    expect(didMissCut(s, par)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { isRoundInProgress, parseRel, diffToParStr, toParStr, sumAllRelative } from './scoring-utils.js';
+import { isRoundInProgress, parseRel, diffToParStr, toParStr, sumAllRelative, didMissCut } from './scoring-utils.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -298,12 +298,7 @@ async function renderAdmin(container) {
     const par = tournament?.par || 72;
     const rows = draftedPlayers.map((p) => {
       const s = scores[p.name] || {};
-      // Missed cut: CUT marker anywhere, OR R1+R2 raw total ≥ 2*par+5
-      const d1 = parseInt(s.day1, 10);
-      const d2 = parseInt(s.day2, 10);
-      const hasCutMarker = [s.day1, s.day2, s.day3, s.day4].some((v) => v === 'CUT');
-      const r1r2Sum = (!isNaN(d1) && !isNaN(d2)) ? d1 + d2 : null;
-      const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum - 2 * par >= 5);
+      const missedCut = didMissCut(s, par);
       const cells = [1, 2, 3, 4].map((d) => {
         const val = s[`day${d}`] || '';
         const thru = s[`day${d}Thru`];
@@ -1366,10 +1361,7 @@ async function renderScoreboard(container) {
                   dayDiffs.push(count ? diff : null);
                   dayHas.push(count > 0);
                 }
-                // Missed cut: explicit CUT marker, OR R1+R2 to-par ≥ +5 (same +5 rule ESPN uses)
-                const hasCutMarker = dayScores.some((v) => v === 'CUT');
-                const r1r2Sum = (dayDiffs[0] != null && dayDiffs[1] != null) ? dayDiffs[0] + dayDiffs[1] : null;
-                const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum >= 5);
+                const missedCut = didMissCut(s, p);
                 const { diff: totalDiff, count: totalCount } = sumAllRelative(dayScores, dayThrus, dayRels, p);
                 return { g, s, dayScores, dayThrus, dayRels, dayDiffs, dayHas, totalDiff, totalCount, missedCut };
               });
@@ -1479,16 +1471,11 @@ async function renderScoreboard(container) {
                 const dayScores = [s.day1, s.day2, s.day3, s.day4];
                 const dayThrus = [s.day1Thru, s.day2Thru, s.day3Thru, s.day4Thru];
                 const dayRels = [s.day1Rel, s.day2Rel, s.day3Rel, s.day4Rel];
-                const perDay = [];
                 for (let d = 0; d < 4; d++) {
                   const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
-                  perDay.push({ diff: count ? diff : null });
                   if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
                 }
-                // Missed cut: CUT marker anywhere, OR R1+R2 to-par ≥ +5
-                const hasCutMarker = dayScores.some((v) => v === 'CUT');
-                const r1r2Sum = (perDay[0].diff != null && perDay[1].diff != null) ? perDay[0].diff + perDay[1].diff : null;
-                const missedCut = hasCutMarker || (r1r2Sum != null && r1r2Sum >= 5);
+                const missedCut = didMissCut(s, p);
                 const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
                 return `<tr>
                   <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
