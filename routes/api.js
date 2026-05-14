@@ -333,13 +333,13 @@ router.post('/wc/pick', requireUser, requireStatus('wc_selection'), async (req, 
       await set(`wc:${player}`, golfer);
       emit('wc:picked', { player, golfer });
 
-      // Check if all users have WC picks — advance to day1
+      // Check if all users have WC picks — advance to mc_pick
       const allPicked = await Promise.all(users.map((u) => get(`wc:${u}`)));
       if (allPicked.every((w) => w !== null)) {
         const meta = req.tournamentMeta;
-        meta.status = 'day1';
+        meta.status = 'mc_pick';
         await setJSON('tournament:meta', meta);
-        emit('tournament:advanced', { status: 'day1' });
+        emit('tournament:advanced', { status: 'mc_pick' });
       }
     });
     res.json({ ok: true });
@@ -529,6 +529,55 @@ router.post('/admin/missedcut', requireUser, async (req, res) => {
   if (!picks || typeof picks !== 'object') return res.status(400).json({ error: 'picks object required' });
   await setJSON('missedcut:picks', picks);
   res.json({ ok: true });
+});
+
+router.get('/missedcut/eligible', requireUser, async (req, res) => {
+  const allGolfers = await getJSON('tournament:players') || [];
+  const users = await getJSON('users') || [];
+  const wcPicks = new Set();
+  for (const u of users) {
+    const wc = await get(`wc:${u}`);
+    if (wc) wcPicks.add(wc);
+  }
+  res.json(allGolfers.filter((g) => !wcPicks.has(g.name)));
+});
+
+router.post('/missedcut/pick', requireUser, requireStatus('mc_pick'), async (req, res) => {
+  const player = getUser(req);
+  const { golfer } = req.body;
+  if (!golfer) return res.status(400).json({ error: 'golfer required' });
+
+  try {
+    await withLock('lock:mc:pick', 5000, async () => {
+      const allGolfers = await getJSON('tournament:players') || [];
+      if (!allGolfers.find((g) => g.name === golfer)) {
+        throw Object.assign(new Error('Unknown golfer'), { status: 400 });
+      }
+
+      const users = await getJSON('users') || [];
+      for (const u of users) {
+        const wc = await get(`wc:${u}`);
+        if (wc === golfer) {
+          throw Object.assign(new Error(`${golfer} is someone's Wild Card pick`), { status: 409 });
+        }
+      }
+
+      const picks = (await getJSON('missedcut:picks')) || {};
+      picks[player] = golfer;
+      await setJSON('missedcut:picks', picks);
+      emit('mc:picked', { player, golfer });
+
+      if (users.every((u) => picks[u])) {
+        const meta = req.tournamentMeta;
+        meta.status = 'day1';
+        await setJSON('tournament:meta', meta);
+        emit('tournament:advanced', { status: 'day1' });
+      }
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 409).json({ error: e.message });
+  }
 });
 
 // ── Reader API ───────────────────────────────────────────────────────────────

@@ -65,6 +65,7 @@ function routeFromStatus(status) {
   if (!status || status === 'setup') return 'admin';
   if (status === 'drafting') return 'draft';
   if (status === 'wc_selection') return 'myTeam';
+  if (status === 'mc_pick') return 'myTeam';
   return 'leaderboard';
 }
 
@@ -618,6 +619,7 @@ window.filterGolfers = function() {
 };
 
 window.pickGolfer = async function(golfer) {
+  if (!confirm(`Draft ${golfer}?`)) return;
   // Disable all pick buttons immediately to prevent double-taps
   document.querySelectorAll('#golfer-list .golfer-item').forEach((item) => {
     item.classList.add('disabled');
@@ -766,12 +768,13 @@ window.filterField = function() {
 // ── View: My Team ─────────────────────────────────────────────────────────────
 
 async function renderMyTeam(container) {
-  const [team, wcData, tournament, wcEligible, mcData] = await Promise.all([
+  const [team, wcData, tournament, wcEligible, mcData, mcEligible] = await Promise.all([
     api('GET', `/teams/${state.user}`),
     api('GET', '/wc'),
     api('GET', '/tournament'),
     api('GET', '/wc/eligible'),
     api('GET', '/missedcut').catch(() => ({})),
+    api('GET', '/missedcut/eligible').catch(() => []),
   ]);
 
   const myWC = wcData[state.user];
@@ -850,15 +853,45 @@ async function renderMyTeam(container) {
       </div>`).join('')}
   </div>`;
 
-  // Missed cut bet
-  if (Object.keys(mcData).length > 0) {
+  // Missed cut pick selection
+  const myMCPick = mcData[state.user];
+  if (status === 'mc_pick') {
+    if (myMCPick) {
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">🎲 Missed Cut Pick</div>
+        <div class="alert alert-success">You selected <strong>${myMCPick}</strong> to miss the cut.</div>
+      </div>`;
+    } else {
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">🎲 Pick Your Missed Cut Golfer</div>
+        <div class="alert alert-warning mb-3">Choose one golfer you think will miss the cut. Cannot be anyone's Wild Card pick.</div>
+        <input type="text" id="mc-search" placeholder="Search…" oninput="filterMC()" class="mb-3" />
+        <div id="mc-list" class="max-h-64 overflow-y-auto">
+          ${mcEligible.length === 0
+            ? '<p class="text-gray-400 text-sm">No eligible golfers.</p>'
+            : mcEligible.map((g) => `
+              <div class="golfer-item" onclick="pickMC('${g.name.replace(/'/g, "\\'")}')">
+                <span>${g.name}</span>
+              </div>`).join('')}
+        </div>
+      </div>`;
+    }
+  }
+
+  // Missed cut bet (all picks, shown during/after mc_pick phase)
+  const users = Object.keys(wcData);
+  if (status === 'mc_pick' || Object.keys(mcData).length > 0) {
     html += `
-    <div class="card">
-      <div class="section-title">🎲 Missed Cut Bet</div>
-      ${Object.entries(mcData).map(([player, golfer]) => `
+    <div class="card mb-4">
+      <div class="section-title">🎲 All Missed Cut Picks</div>
+      ${users.map((player) => `
         <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
           <span class="text-sm font-medium ${player === state.user ? 'text-green-700' : ''}">${player}</span>
-          <span class="text-sm text-gray-700">${golfer} <span class="badge badge-mc">MC</span></span>
+          ${mcData[player]
+            ? `<span class="text-sm text-gray-700">${mcData[player]} <span class="badge badge-mc">MC</span></span>`
+            : `<span class="text-sm text-gray-400 italic">Not yet selected</span>`}
         </div>`).join('')}
     </div>`;
   }
@@ -877,6 +910,21 @@ window.pickWC = async function(golfer) {
   if (!confirm(`Pick ${golfer} as your Wild Card?`)) return;
   await api('POST', '/wc/pick', { golfer });
   showToast(`${golfer} is your Wild Card!`, 'success');
+  state.tournament = await api('GET', '/tournament');
+  navigate('myTeam');
+};
+
+window.filterMC = function() {
+  const q = el('mc-search').value.toLowerCase();
+  document.querySelectorAll('#mc-list .golfer-item').forEach((item) => {
+    item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+};
+
+window.pickMC = async function(golfer) {
+  if (!confirm(`Pick ${golfer} to miss the cut?`)) return;
+  await api('POST', '/missedcut/pick', { golfer });
+  showToast(`${golfer} is your missed cut pick!`, 'success');
   state.tournament = await api('GET', '/tournament');
   navigate('myTeam');
 };
@@ -1541,10 +1589,23 @@ function setupSocket() {
     if (state.view === 'myTeam') navigate('myTeam');
   });
 
+  socket.on('mc:picked', async ({ player }) => {
+    showToast(`${player} made their missed cut pick`, 'info');
+    if (state.view === 'myTeam') navigate('myTeam');
+  });
+
   socket.on('tournament:advanced', async ({ status }) => {
     state.tournament = await api('GET', '/tournament');
-    showToast(`Tournament advanced to ${status}`, 'info');
-    if (['leaderboard', 'scoreboard', 'admin'].includes(state.view)) navigate(state.view);
+    if (status === 'mc_pick') {
+      showToast('Wild Card picks done! Now pick your Missed Cut golfer.', 'success');
+      navigate('myTeam');
+    } else if (status === 'day1') {
+      showToast('All picks locked in! Tournament is live.', 'success');
+      navigate('leaderboard');
+    } else {
+      showToast(`Tournament advanced to ${status}`, 'info');
+      if (['leaderboard', 'scoreboard', 'admin'].includes(state.view)) navigate(state.view);
+    }
   });
 
   socket.on('scores:updated', () => {
