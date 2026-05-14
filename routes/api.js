@@ -550,7 +550,9 @@ router.get('/missedcut/eligible', requireUser, async (req, res) => {
     const wc = await get(`wc:${u}`);
     if (wc) wcPicks.add(wc);
   }
-  res.json(allGolfers.filter((g) => !wcPicks.has(g.name)));
+  const golfers = allGolfers.filter((g) => !wcPicks.has(g.name));
+  const sequence = await getJSON('missedcut:sequence') || [];
+  res.json({ golfers, sequence });
 });
 
 router.post('/missedcut/pick', requireUser, requireStatus('mc_pick'), async (req, res) => {
@@ -566,16 +568,48 @@ router.post('/missedcut/pick', requireUser, requireStatus('mc_pick'), async (req
       }
 
       const users = await getJSON('users') || [];
+      const wcPicks = new Set();
       for (const u of users) {
         const wc = await get(`wc:${u}`);
-        if (wc === golfer) {
-          throw Object.assign(new Error(`${golfer} is someone's Wild Card pick`), { status: 409 });
+        if (wc) wcPicks.add(wc);
+      }
+      if (wcPicks.has(golfer)) {
+        throw Object.assign(new Error(`${golfer} is someone's Wild Card pick`), { status: 409 });
+      }
+
+      // Anchor constraint: pick 2 within ±3 of pick 1; pick 3 within ±1 of established range
+      const eligible = allGolfers.filter((g) => !wcPicks.has(g.name));
+      const sequence = await getJSON('missedcut:sequence') || [];
+      const pickedIdx = eligible.findIndex((g) => g.name === golfer);
+
+      if (sequence.length === 1) {
+        const anchorIdx = eligible.findIndex((g) => g.name === sequence[0]);
+        if (Math.abs(pickedIdx - anchorIdx) > 2) {
+          const lo = anchorIdx - 2 + 1, hi = anchorIdx + 2 + 1; // 1-based for message
+          throw Object.assign(
+            new Error(`Must be within 2 spots of the anchor (positions ${lo}–${hi})`),
+            { status: 400 }
+          );
+        }
+      } else if (sequence.length === 2) {
+        const idx0 = eligible.findIndex((g) => g.name === sequence[0]);
+        const idx1 = eligible.findIndex((g) => g.name === sequence[1]);
+        const minIdx = Math.min(idx0, idx1);
+        const maxIdx = Math.max(idx0, idx1);
+        if (pickedIdx < minIdx - 1 || pickedIdx > maxIdx + 1) {
+          const lo = minIdx - 1 + 1, hi = maxIdx + 1 + 1; // 1-based for message
+          throw Object.assign(
+            new Error(`Must be within 1 spot of the established range (positions ${lo}–${hi})`),
+            { status: 400 }
+          );
         }
       }
 
       const picks = (await getJSON('missedcut:picks')) || {};
       picks[player] = golfer;
       await setJSON('missedcut:picks', picks);
+      sequence.push(golfer);
+      await setJSON('missedcut:sequence', sequence);
       emit('mc:picked', { player, golfer });
 
       if (users.every((u) => picks[u])) {

@@ -871,6 +871,8 @@ async function renderMyTeam(container) {
 
   // Missed cut pick selection
   const myMCPick = mcData[state.user];
+  const mcGolfers = mcEligible.golfers || [];
+  const mcSequence = mcEligible.sequence || [];
   if (status === 'mc_pick') {
     if (myMCPick) {
       html += `
@@ -879,18 +881,45 @@ async function renderMyTeam(container) {
         <div class="alert alert-success">You selected <strong>${myMCPick}</strong> to miss the cut.</div>
       </div>`;
     } else {
+      // Compute valid range based on anchor rules
+      let validRange = null;
+      let constraintDesc = "You're first! Your pick anchors the range for everyone else.";
+      if (mcSequence.length === 1) {
+        const anchorIdx = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
+        validRange = { low: Math.max(0, anchorIdx - 2), high: Math.min(mcGolfers.length - 1, anchorIdx + 2) };
+        constraintDesc = `Must be within 2 spots of <strong>${mcSequence[0]}</strong> (positions ${validRange.low + 1}–${validRange.high + 1}).`;
+      } else if (mcSequence.length === 2) {
+        const idx0 = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
+        const idx1 = mcGolfers.findIndex((g) => g.name === mcSequence[1]);
+        const minIdx = Math.min(idx0, idx1);
+        const maxIdx = Math.max(idx0, idx1);
+        validRange = { low: Math.max(0, minIdx - 1), high: Math.min(mcGolfers.length - 1, maxIdx + 1) };
+        constraintDesc = `Must be within 1 spot of the established range (positions ${validRange.low + 1}–${validRange.high + 1}).`;
+      }
+      const alreadyPickedNames = new Set(Object.values(mcData));
       html += `
       <div class="card mb-4">
         <div class="section-title">🎲 Pick Your Missed Cut Golfer</div>
-        <div class="alert alert-warning mb-3">Choose one golfer you think will miss the cut. Cannot be anyone's Wild Card pick.</div>
+        <div class="alert alert-warning mb-3">${constraintDesc}</div>
         <input type="text" id="mc-search" placeholder="Search…" oninput="filterMC()" class="mb-3" />
         <div id="mc-list" class="max-h-64 overflow-y-auto">
-          ${mcEligible.length === 0
+          ${mcGolfers.length === 0
             ? '<p class="text-gray-400 text-sm">No eligible golfers.</p>'
-            : mcEligible.map((g) => `
-              <div class="golfer-item" onclick="pickMC('${g.name.replace(/'/g, "\\'")}')">
-                <span>${g.name}</span>
-              </div>`).join('')}
+            : mcGolfers.map((g, i) => {
+                const inRange = !validRange || (i >= validRange.low && i <= validRange.high);
+                const taken = alreadyPickedNames.has(g.name);
+                const clickable = inRange && !taken;
+                const badge = taken
+                  ? '<span class="text-xs text-gray-400">taken</span>'
+                  : !inRange
+                    ? '<span class="text-xs text-gray-400">out of range</span>'
+                    : '';
+                return `<div class="golfer-item${!clickable ? ' disabled opacity-50 pointer-events-none' : ''}" onclick="${clickable ? `pickMC('${g.name.replace(/'/g, "\\'")}')` : ''}">
+                  <span class="text-xs text-gray-300 w-6 shrink-0">${i + 1}</span>
+                  <span>${g.name}</span>
+                  ${badge}
+                </div>`;
+              }).join('')}
         </div>
       </div>`;
     }
