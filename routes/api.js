@@ -507,6 +507,16 @@ router.post('/admin/espn/stop-polling', requireUser, async (req, res) => {
   }
 });
 
+router.post('/admin/espn/name', requireUser, async (req, res) => {
+  const { espnName } = req.body;
+  if (typeof espnName !== 'string') return res.status(400).json({ error: 'espnName required' });
+  const meta = await getJSON('tournament:meta');
+  if (!meta) return res.status(400).json({ error: 'No tournament' });
+  meta.espnName = espnName.trim();
+  await setJSON('tournament:meta', meta);
+  res.json({ ok: true });
+});
+
 router.get('/admin/espn/status', requireUser, async (req, res) => {
   const status = getPollingStatus();
   const meta = await getJSON('tournament:meta');
@@ -514,6 +524,7 @@ router.get('/admin/espn/status', requireUser, async (req, res) => {
     ...status,
     lastEspnSync: meta?.lastEspnSync || null,
     espnEventId: meta?.espnEventId || null,
+    espnName: meta?.espnName || null,
   });
 });
 

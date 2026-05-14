@@ -349,16 +349,26 @@ async function renderAdmin(container) {
     </div>`;
   }
 
-  // ── ESPN Polling (when tournament is in an active day)
-  if (status && ['day1', 'day2', 'day3', 'day4'].includes(status)) {
+  // ── ESPN (name filter always visible after setup; polling controls only on active days)
+  if (status && status !== 'setup') {
     const espn = await api('GET', '/admin/espn/status').catch(() => null);
     const polling = !!espn?.polling;
     const last = espn?.lastPollTime ? new Date(espn.lastPollTime).toLocaleString() : 'never';
+    const isActiveDay = ['day1', 'day2', 'day3', 'day4'].includes(status);
     html += `
     <div class="card mb-4">
-      <div class="section-title">ESPN Polling</div>
+      <div class="section-title">ESPN</div>
+      <div class="mb-3">
+        <label class="block text-xs font-medium text-gray-500 mb-1">Event Name Filter</label>
+        <div class="flex gap-2">
+          <input type="text" id="espn-name" value="${espn?.espnName || ''}" placeholder="e.g. PGA Championship" class="flex-1 text-sm" />
+          <button onclick="saveEspnName()" class="btn btn-secondary btn-sm">Save</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Matches against ESPN's event name/shortName so the right tournament is picked when multiple events are listed.</p>
+      </div>
+      ${isActiveDay ? `
       <div class="text-sm text-gray-600 mb-2">
-        Status: <span class="${polling ? 'text-green-700' : 'text-gray-500'} font-medium">${polling ? 'on' : 'off'}</span>
+        Polling: <span class="${polling ? 'text-green-700' : 'text-gray-500'} font-medium">${polling ? 'on' : 'off'}</span>
         · last poll: <span class="font-mono text-xs">${last}</span>
       </div>
       <div class="flex gap-2">
@@ -366,7 +376,7 @@ async function renderAdmin(container) {
           ? `<button onclick="stopEspnPolling()" class="btn btn-secondary btn-sm">Stop Polling</button>`
           : `<button onclick="startEspnPolling()" class="btn btn-primary btn-sm">Start Polling</button>`}
         <button onclick="syncEspnNow()" class="btn btn-secondary btn-sm">Sync Now</button>
-      </div>
+      </div>` : ''}
     </div>`;
   }
 
@@ -406,6 +416,12 @@ async function renderAdmin(container) {
 
   container.innerHTML = html;
 }
+
+window.saveEspnName = async function() {
+  const espnName = el('espn-name').value.trim();
+  await api('POST', '/admin/espn/name', { espnName });
+  showToast('ESPN event name saved', 'success');
+};
 
 window.startEspnPolling = async function() {
   await api('POST', '/admin/espn/start-polling');

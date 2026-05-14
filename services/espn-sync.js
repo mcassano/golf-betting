@@ -26,7 +26,9 @@ function normalizeName(name) {
  * Emits scores:updated via Socket.io after updates.
  */
 export async function syncScores(io, date) {
-  const { players: espnPlayers } = await fetchScores(date);
+  const meta = await getJSON('tournament:meta');
+  const espnName = meta?.espnName || null;
+  const { players: espnPlayers } = await fetchScores(date, espnName);
   const storedPlayers = await getJSON('tournament:players');
   if (!storedPlayers) {
     console.log('[ESPN Sync] No stored players found, skipping score sync');
@@ -103,7 +105,6 @@ export async function syncScores(io, date) {
     io.emit('scores:updated', { source: 'espn', updated });
   }
 
-  const meta = await getJSON('tournament:meta');
   if (meta) {
     meta.lastEspnSync = new Date().toISOString();
     await setJSON('tournament:meta', meta);
@@ -118,7 +119,9 @@ export async function syncScores(io, date) {
  * Returns the player list.
  */
 export async function syncPlayers(date) {
-  const tournament = await fetchTournament(date);
+  const meta = await getJSON('tournament:meta');
+  const espnName = meta?.espnName || null;
+  const tournament = await fetchTournament(date, espnName);
 
   // Merge with existing players if any (preserve wcEligible flags)
   const existingPlayers = await getJSON('tournament:players') || [];
@@ -138,12 +141,12 @@ export async function syncPlayers(date) {
 
   await setJSON('tournament:players', players);
 
-  const meta = await getJSON('tournament:meta') || { name: tournament.eventName, status: 'setup' };
-  if (!meta.name || meta.name === 'Unknown Event') {
-    meta.name = tournament.eventName;
+  const savedMeta = meta || { name: tournament.eventName, status: 'setup' };
+  if (!savedMeta.name || savedMeta.name === 'Unknown Event') {
+    savedMeta.name = tournament.eventName;
   }
-  meta.espnEventId = tournament.eventId;
-  await setJSON('tournament:meta', meta);
+  savedMeta.espnEventId = tournament.eventId;
+  await setJSON('tournament:meta', savedMeta);
 
   console.log(`[ESPN Sync] Players synced: ${players.length} players`);
   return { players, eventName: tournament.eventName };

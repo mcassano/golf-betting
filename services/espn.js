@@ -14,10 +14,28 @@ async function fetchScoreboard(date) {
 }
 
 /**
+ * Find the right event from ESPN response, optionally matching by name.
+ * Falls back to events[0] if no name given or no match found.
+ */
+function getEvent(data, espnName) {
+  const events = data?.events || [];
+  if (!events.length) return null;
+  if (espnName) {
+    const lower = espnName.toLowerCase();
+    const match = events.find(
+      (e) => e.name?.toLowerCase().includes(lower) || e.shortName?.toLowerCase().includes(lower)
+    );
+    if (match) return match;
+    console.warn(`[ESPN] No event matched "${espnName}", falling back to events[0]`);
+  }
+  return events[0] || null;
+}
+
+/**
  * Extract competitors array from ESPN response.
  */
-function getCompetitors(data) {
-  const event = data?.events?.[0];
+function getCompetitors(data, espnName) {
+  const event = getEvent(data, espnName);
   if (!event) return [];
   const competition = event.competitions?.[0];
   if (!competition) return [];
@@ -35,14 +53,14 @@ function holesPlayed(linescore) {
  * fetchTournament() - Setup/init mode.
  * Returns { eventName, eventId, players: [{ name, espnId }] }
  */
-export async function fetchTournament(date) {
+export async function fetchTournament(date, espnName) {
   const data = await fetchScoreboard(date);
-  const event = data?.events?.[0];
+  const event = getEvent(data, espnName);
   if (!event) {
     throw new Error('No event found in ESPN scoreboard data');
   }
 
-  const competitors = getCompetitors(data);
+  const competitors = getCompetitors(data, espnName);
 
   const players = competitors.map((c) => ({
     name: c.athlete?.displayName || 'Unknown',
@@ -62,9 +80,9 @@ export async function fetchTournament(date) {
  * In-progress rounds return current strokes + holes played.
  * Completed rounds return final strokes + 'F'.
  */
-export async function fetchScores(date) {
+export async function fetchScores(date, espnName) {
   const data = await fetchScoreboard(date);
-  const competitors = getCompetitors(data);
+  const competitors = getCompetitors(data, espnName);
 
   const players = competitors.map((c) => {
     const linescores = c.linescores || [];
