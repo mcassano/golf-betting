@@ -11,6 +11,29 @@ const state = {
 
 let socket = null;
 
+// ── Tournament icons ──────────────────────────────────────────────────────────
+
+const ICONS = {
+  jacket: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22 12h20v6c0 2-4 4-10 4s-10-2-10-4v-6z" fill="#065f46"/><path d="M22 12l-12 8v20l8 4v-16l4-4v-6z" fill="#047857"/><path d="M42 12l12 8v20l-8 4v-16l-4-4v-6z" fill="#047857"/><path d="M18 28v24h10V40h8v12h10V28l-7-4h-14l-7 4z" fill="#065f46"/><path d="M22 12l-4 6 4 4h20l4-4-4-6" fill="#047857" opacity=".3"/><path d="M10 20l8-4v8l-4 4v16l-4-2V20z" fill="#034e3a"/><path d="M54 20l-8-4v8l4 4v16l4-2V20z" fill="#034e3a"/><rect x="29" y="30" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="35" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="40" width="6" height="2" rx="1" fill="#a7f3d0"/><path d="M22 12c0-2 4-4 10-4s10 2 10 4" stroke="#034e3a" stroke-width="1" fill="none"/></svg>`,
+
+  // Wanamaker Trophy – gold two-handled cup (PGA Championship)
+  wanamaker: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="57" width="28" height="5" rx="2" fill="#78350f"/><rect x="23" y="50" width="18" height="7" rx="1" fill="#92400e"/><rect x="28" y="40" width="8" height="10" fill="#b45309"/><path d="M13 14 Q12 40 32 40 Q52 40 51 14 Z" fill="#fbbf24"/><ellipse cx="32" cy="14" rx="19" ry="5" fill="#f59e0b"/><path d="M13 19 Q3 21 3 30 Q3 39 13 37" stroke="#d97706" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M51 19 Q61 21 61 30 Q61 39 51 37" stroke="#d97706" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="32" cy="14" rx="10" ry="2.5" fill="#fde68a" opacity="0.6"/><path d="M20 20 Q22 16 27 20" stroke="white" stroke-width="1.5" fill="none" opacity="0.4"/></svg>`,
+
+  // Claret Jug – dark red jug with handle and spout (The Open Championship)
+  claret: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="32" cy="59" rx="13" ry="4" fill="#7f1d1d"/><path d="M21 26 Q19 57 32 57 Q45 57 43 26 Z" fill="#991b1b"/><rect x="26" y="11" width="12" height="16" rx="3" fill="#7f1d1d"/><ellipse cx="32" cy="11" rx="9" ry="3.5" fill="#b91c1c"/><ellipse cx="32" cy="9" rx="5" ry="2" fill="#dc2626"/><circle cx="32" cy="7" r="2" fill="#b91c1c"/><path d="M43 32 Q55 30 55 40 Q55 50 43 50" stroke="#7f1d1d" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M21 28 Q11 25 8 20" stroke="#7f1d1d" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M25 30 Q26 25 29 30" stroke="#fca5a5" stroke-width="1.5" fill="none" opacity="0.5"/></svg>`,
+
+  // US Open Trophy – silver two-handled cup
+  usopen: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="57" width="28" height="5" rx="2" fill="#334155"/><rect x="23" y="50" width="18" height="7" rx="1" fill="#475569"/><rect x="28" y="40" width="8" height="10" fill="#64748b"/><path d="M13 14 Q12 40 32 40 Q52 40 51 14 Z" fill="#e2e8f0"/><ellipse cx="32" cy="14" rx="19" ry="5" fill="#cbd5e1"/><path d="M13 19 Q3 21 3 30 Q3 39 13 37" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M51 19 Q61 21 61 30 Q61 39 51 37" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="32" cy="14" rx="10" ry="2.5" fill="white" opacity="0.5"/><path d="M20 20 Q22 16 27 20" stroke="white" stroke-width="1.5" fill="none" opacity="0.6"/><path d="M26 28 v8 M32 26 v10 M38 28 v8" stroke="#94a3b8" stroke-width="1" opacity="0.5"/></svg>`,
+};
+
+function getTournamentIcon(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('pga championship')) return ICONS.wanamaker;
+  if (n.includes('u.s. open') || n.includes('us open') || n.includes('united states open')) return ICONS.usopen;
+  if (n.includes('the open') || n.includes('open championship') || n.includes('british open')) return ICONS.claret;
+  return ICONS.jacket; // Masters or default
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 async function api(method, path, body) {
@@ -1292,7 +1315,7 @@ async function renderScoreboard(container) {
       }
     }
 
-    // Count green jackets per user
+    // Count winner icons per user
     const jacketCounts = {};
     for (const u of users) jacketCounts[u] = 0;
     const jacketBetKeys = ['day1', 'day2', 'day3', 'day4', 'overall'];
@@ -1322,7 +1345,7 @@ async function renderScoreboard(container) {
 
     html += `<div class="card mb-4"><div class="section-title">Bet Winners</div>`;
 
-    const jacketSvg = `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22 12h20v6c0 2-4 4-10 4s-10-2-10-4v-6z" fill="#065f46"/><path d="M22 12l-12 8v20l8 4v-16l4-4v-6z" fill="#047857"/><path d="M42 12l12 8v20l-8 4v-16l-4-4v-6z" fill="#047857"/><path d="M18 28v24h10V40h8v12h10V28l-7-4h-14l-7 4z" fill="#065f46"/><path d="M22 12l-4 6 4 4h20l4-4-4-6" fill="#047857" opacity=".3"/><path d="M10 20l8-4v8l-4 4v16l-4-2V20z" fill="#034e3a"/><path d="M54 20l-8-4v8l4 4v16l4-2V20z" fill="#034e3a"/><rect x="29" y="30" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="35" width="6" height="2" rx="1" fill="#a7f3d0"/><rect x="29" y="40" width="6" height="2" rx="1" fill="#a7f3d0"/><path d="M22 12c0-2 4-4 10-4s10 2 10 4" stroke="#034e3a" stroke-width="1" fill="none"/></svg>`;
+    const winnerIcon = getTournamentIcon(state.tournament?.name);
 
     if (totalJackets > 0) {
       html += `<div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:white;border-radius:8px">`;
@@ -1330,7 +1353,7 @@ async function renderScoreboard(container) {
         const count = jacketCounts[u];
         if (count > 0) {
           html += `<div style="text-align:center;flex:1">`;
-          html += `<div style="display:flex;justify-content:center;gap:2px">${jacketSvg.repeat(count)}</div>`;
+          html += `<div style="display:flex;justify-content:center;gap:2px">${winnerIcon.repeat(count)}</div>`;
           html += `<div style="color:#065f46;font-size:11px;font-weight:600;margin-top:4px">${u} — ${count}</div>`;
           html += `</div>`;
         } else {
