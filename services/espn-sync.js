@@ -1,4 +1,4 @@
-import { get, set, mget, getJSON, setJSON } from './redis.js';
+import { get, set, del, mget, getJSON, setJSON } from './redis.js';
 import { encodeKey } from './scoring.js';
 import { fetchTournament, fetchScores } from './espn.js';
 
@@ -111,17 +111,25 @@ export async function syncScores(io, date) {
     const batchKeys = [];
     for (const sp of storedPlayers) {
       const k = encodeKey(sp.name);
-      batchKeys.push(`scores:${k}:day2`, `scores:${k}:day3`);
+      batchKeys.push(`scores:${k}:day2`, `scores:${k}:day3`, `scores:${k}:day4`);
     }
     const vals = batchKeys.length ? await mget(...batchKeys) : [];
 
     for (let i = 0; i < storedPlayers.length; i++) {
-      const day2Score = vals[i * 2];
-      const day3Score = vals[i * 2 + 1];
+      const day2Score = vals[i * 3];
+      const day3Score = vals[i * 3 + 1];
+      const day4Score = vals[i * 3 + 2];
+      const k = encodeKey(storedPlayers[i].name);
+
+      // Clean up spurious day4 CUT: a player with a numeric day3 score made the
+      // cut and is playing day4 — any CUT on day4 was written in error.
+      if (day3Score && day3Score !== 'CUT' && day3Score !== 'WD' && day4Score === 'CUT') {
+        await del(`scores:${k}:day4`);
+      }
+
       // Skip if: no day2 score, already has day3 score, or day2 was WD
       if (!day2Score || day2Score === 'WD' || day3Score !== null) continue;
 
-      const k = encodeKey(storedPlayers[i].name);
       await set(`scores:${k}:day3`, 'CUT');
       updated++;
       const day4Existing = await get(`scores:${k}:day4`);
