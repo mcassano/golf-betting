@@ -103,10 +103,20 @@ function renderNav() {
     { view: 'scoreboard', label: 'Scoreboard', show: ['day1', 'day2', 'day3', 'day4', 'complete'] },
   ];
 
-  el('nav-links').innerHTML = links
+  const navLinks = links
     .filter((l) => l.always || (l.show && l.show.includes(status)))
     .map((l) => `<button onclick="navigate('${l.view}')" class="nav-link ${state.view === l.view ? 'active' : ''}">${l.label}</button>`)
     .join('');
+
+  const lastSync = state.tournament?.lastEspnSync;
+  const activeDays = ['day1', 'day2', 'day3', 'day4'];
+  let syncLabel = '';
+  if (lastSync && activeDays.includes(status)) {
+    const mins = Math.floor((Date.now() - new Date(lastSync).getTime()) / 60000);
+    syncLabel = `<span class="text-green-300 text-xs ml-3">ESPN updated ${mins === 0 ? 'just now' : `${mins}m ago`}</span>`;
+  }
+
+  el('nav-links').innerHTML = navLinks + syncLabel;
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────

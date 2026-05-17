@@ -1,4 +1,4 @@
-import { get, set, getJSON, setJSON } from './redis.js';
+import { get, set, mget, getJSON, setJSON } from './redis.js';
 import { encodeKey } from './scoring.js';
 import { fetchTournament, fetchScores } from './espn.js';
 
@@ -99,6 +99,42 @@ export async function syncScores(io, date) {
   if (needsPlayerSave) {
     await setJSON('tournament:players', storedPlayers);
     console.log('[ESPN Sync] Backfilled espnId on matched players');
+  }
+
+  // Detect and mark missed-cut players. ESPN doesn't emit a 'CUT' marker —
+  // players who missed the cut simply have no day3+ data. Once day3 has started
+  // (at least one player has a day3 score from ESPN), any stored player who has a
+  // prior-day score in Redis but no current-day score from ESPN missed the cut.
+  const currentDayN = { day3: 3, day4: 4, complete: 4 }[meta?.status];
+  if (currentDayN >= 3) {
+    for (let d = 3; d <= 4; d++) {
+      const dayKey = `day${d}`;
+      if (!espnPlayers.some((ep) => ep.scores[dayKey] !== null)) continue;
+
+      const prevKey = `day${d - 1}`;
+      const batchKeys = [];
+      for (const sp of storedPlayers) {
+        const k = encodeKey(sp.name);
+        batchKeys.push(`scores:${k}:${prevKey}`, `scores:${k}:${dayKey}`);
+      }
+      const vals = batchKeys.length ? await mget(...batchKeys) : [];
+
+      for (let i = 0; i < storedPlayers.length; i++) {
+        const prevScore = vals[i * 2];
+        const currScore = vals[i * 2 + 1];
+        // Skip if: no prior-day score, already has current-day score, or prior day was WD
+        if (!prevScore || prevScore === 'WD' || currScore !== null) continue;
+
+        const k = encodeKey(storedPlayers[i].name);
+        await set(`scores:${k}:${dayKey}`, 'CUT');
+        updated++;
+        for (let future = d + 1; future <= 4; future++) {
+          const futureKey = `scores:${k}:day${future}`;
+          const existing = await get(futureKey);
+          if (existing === null || existing === undefined) await set(futureKey, 'CUT');
+        }
+      }
+    }
   }
 
   if (updated > 0 && io) {

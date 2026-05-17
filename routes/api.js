@@ -441,6 +441,9 @@ router.post('/admin/scores/bulk', requireUser, async (req, res) => {
     const key = encodeKey(golfer);
     const val = score === 'CUT' || score === 'WD' ? score : String(parseInt(score, 10));
     await set(`scores:${key}:day${dayN}`, val);
+    if (val !== 'CUT' && val !== 'WD') {
+      await set(`scores:${key}:day${dayN}:thru`, 'F');
+    }
     const lockId = `${key}:day${dayN}`;
     if (!locked.includes(lockId)) locked.push(lockId);
     // Propagate CUT to remaining days so they don't block completion
