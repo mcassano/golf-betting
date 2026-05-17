@@ -102,37 +102,31 @@ export async function syncScores(io, date) {
   }
 
   // Detect and mark missed-cut players. ESPN doesn't emit a 'CUT' marker —
-  // players who missed the cut simply have no day3+ data. Once day3 has started
-  // (at least one player has a day3 score from ESPN), any stored player who has a
-  // prior-day score in Redis but no current-day score from ESPN missed the cut.
+  // players who missed the cut simply have no day3+ data. Golf cuts happen after
+  // round 2, so we only check day3: once day3 has started (any ESPN player has a
+  // day3 score), any stored player with a day2 score in Redis but no day3 score
+  // from ESPN missed the cut.
   const currentDayN = { day3: 3, day4: 4, complete: 4 }[meta?.status];
-  if (currentDayN >= 3) {
-    for (let d = 3; d <= 4; d++) {
-      const dayKey = `day${d}`;
-      if (!espnPlayers.some((ep) => ep.scores[dayKey] !== null)) continue;
+  if (currentDayN >= 3 && espnPlayers.some((ep) => ep.scores.day3 !== null)) {
+    const batchKeys = [];
+    for (const sp of storedPlayers) {
+      const k = encodeKey(sp.name);
+      batchKeys.push(`scores:${k}:day2`, `scores:${k}:day3`);
+    }
+    const vals = batchKeys.length ? await mget(...batchKeys) : [];
 
-      const prevKey = `day${d - 1}`;
-      const batchKeys = [];
-      for (const sp of storedPlayers) {
-        const k = encodeKey(sp.name);
-        batchKeys.push(`scores:${k}:${prevKey}`, `scores:${k}:${dayKey}`);
-      }
-      const vals = batchKeys.length ? await mget(...batchKeys) : [];
+    for (let i = 0; i < storedPlayers.length; i++) {
+      const day2Score = vals[i * 2];
+      const day3Score = vals[i * 2 + 1];
+      // Skip if: no day2 score, already has day3 score, or day2 was WD
+      if (!day2Score || day2Score === 'WD' || day3Score !== null) continue;
 
-      for (let i = 0; i < storedPlayers.length; i++) {
-        const prevScore = vals[i * 2];
-        const currScore = vals[i * 2 + 1];
-        // Skip if: no prior-day score, already has current-day score, or prior day was WD
-        if (!prevScore || prevScore === 'WD' || currScore !== null) continue;
-
-        const k = encodeKey(storedPlayers[i].name);
-        await set(`scores:${k}:${dayKey}`, 'CUT');
-        updated++;
-        for (let future = d + 1; future <= 4; future++) {
-          const futureKey = `scores:${k}:day${future}`;
-          const existing = await get(futureKey);
-          if (existing === null || existing === undefined) await set(futureKey, 'CUT');
-        }
+      const k = encodeKey(storedPlayers[i].name);
+      await set(`scores:${k}:day3`, 'CUT');
+      updated++;
+      const day4Existing = await get(`scores:${k}:day4`);
+      if (day4Existing === null || day4Existing === undefined) {
+        await set(`scores:${k}:day4`, 'CUT');
       }
     }
   }
