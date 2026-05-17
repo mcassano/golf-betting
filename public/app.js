@@ -87,9 +87,9 @@ function showToast(msg, type = 'info') {
 function routeFromStatus(status) {
   if (!status || status === 'setup') return 'admin';
   if (status === 'drafting') return 'draft';
-  if (status === 'wc_selection') return 'myTeam';
-  if (status === 'mc_pick') return 'myTeam';
-  return 'leaderboard';
+  if (status === 'wc_selection') return 'bets';
+  if (status === 'mc_pick') return 'bets';
+  return 'scoreboard';
 }
 
 function navigate(view) {
@@ -121,8 +121,6 @@ function renderNav() {
     { view: 'admin', label: 'Admin', always: true },
     { view: 'bets', label: 'Bets', always: true },
     { view: 'draft', label: 'Draft', show: ['drafting', 'wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'] },
-    { view: 'myTeam', label: 'My Team', show: ['wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'] },
-    { view: 'leaderboard', label: 'Leaderboard', show: ['day1', 'day2', 'day3', 'day4', 'complete'] },
     { view: 'scoreboard', label: 'Scoreboard', show: ['day1', 'day2', 'day3', 'day4', 'complete'] },
   ];
 
@@ -148,7 +146,7 @@ function renderApp() {
   if (state.role === 'patron' && !['login', 'scoreboard', 'bets'].includes(state.view)) state.view = 'scoreboard';
   renderNav();
   const app = el('app');
-  const views = { login: renderLogin, admin: renderAdmin, bets: renderBets, draft: renderDraft, myTeam: renderMyTeam, leaderboard: renderLeaderboard, scoreboard: renderScoreboard };
+  const views = { login: renderLogin, admin: renderAdmin, bets: renderBets, draft: renderDraft, scoreboard: renderScoreboard };
   const renderer = views[state.view] || renderLogin;
   renderer(app);
 }
@@ -583,7 +581,7 @@ async function renderDraft(container) {
   let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Snake Draft</h2>`;
 
   if (isDraftDone) {
-    html += `<div class="alert alert-success">Draft is complete! <button onclick="navigate('myTeam')" class="underline ml-1">View your team →</button></div>`;
+    html += `<div class="alert alert-success">Draft is complete! <button onclick="navigate('bets')" class="underline ml-1">Go to Bets →</button></div>`;
   } else if (isMyTurn) {
     const totalPicks = order.length * 6;
     html += `<div class="your-turn-banner mb-4">🏌️ It's your turn to pick! (Pick ${currentPick + 1} of ${totalPicks})</div>`;
@@ -686,11 +684,14 @@ window.pickGolfer = async function(golfer) {
 // ── View: Bets ───────────────────────────────────────────────────────────────
 
 async function renderBets(container) {
-  const [players, teams, wcData, mcData] = await Promise.all([
+  const [players, teams, wcData, mcData, tournament, wcEligible, mcEligible] = await Promise.all([
     api('GET', '/players'),
     api('GET', '/teams'),
     api('GET', '/wc'),
     api('GET', '/missedcut').catch(() => ({})),
+    api('GET', '/tournament'),
+    api('GET', '/wc/eligible').catch(() => []),
+    api('GET', '/missedcut/eligible').catch(() => []),
   ]);
 
   const ownership = {};
@@ -698,7 +699,100 @@ async function renderBets(container) {
     (golfers || []).forEach((g) => (ownership[g] = player));
   });
 
+  const status = tournament?.status;
   let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Bets &amp; Rules</h2>`;
+
+  // ── WC pick (wc_selection phase) ─────────────────────────────────────────
+  if (status === 'wc_selection') {
+    const myWC = wcData[state.user];
+    if (myWC) {
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">Wild Card Pick</div>
+        <div class="alert alert-success">You selected <strong>${myWC}</strong> as your Wild Card. 🎰</div>
+        <p class="text-sm text-gray-500">If ${myWC} wins the tournament, you collect $20 from each other player.</p>
+      </div>`;
+    } else {
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">Pick Your Wild Card</div>
+        <div class="alert alert-warning mb-3">Choose one WC golfer from the bottom-50th-percentile eligible list. If they win the tournament, you get $20 from each other player!</div>
+        <input type="text" id="wc-search" placeholder="Search…" oninput="filterWC()" class="mb-3" />
+        <div id="wc-list" class="max-h-64 overflow-y-auto">
+          ${wcEligible.length === 0
+            ? '<p class="text-gray-400 text-sm">No WC eligible golfers (admin needs to mark them).</p>'
+            : wcEligible.map((g) => {
+              const takenBy = Object.entries(wcData).find(([, v]) => v === g.name);
+              if (takenBy) {
+                return `<div class="golfer-item disabled opacity-50 pointer-events-none">
+                  <span>${g.name}</span>
+                  <span class="text-xs text-gray-400">Picked by ${takenBy[0]}</span>
+                </div>`;
+              }
+              return `<div class="golfer-item" onclick="pickWC('${g.name.replace(/'/g, "\\'")}')">
+                <span>${g.name}</span>
+                <span class="badge badge-wc">WC eligible</span>
+              </div>`;
+            }).join('')}
+        </div>
+      </div>`;
+    }
+  }
+
+  // ── MC pick (mc_pick phase) ───────────────────────────────────────────────
+  if (status === 'mc_pick') {
+    const myMCPick = mcData[state.user];
+    const mcGolfers = mcEligible.golfers || [];
+    const mcSequence = mcEligible.sequence || [];
+    if (myMCPick) {
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">🎲 Missed Cut Pick</div>
+        <div class="alert alert-success">You selected <strong>${myMCPick}</strong> to miss the cut.</div>
+      </div>`;
+    } else {
+      let validRange = null;
+      let constraintDesc = "You're first! Your pick anchors the range for everyone else.";
+      if (mcSequence.length === 1) {
+        const anchorIdx = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
+        validRange = { low: Math.max(0, anchorIdx - 2), high: Math.min(mcGolfers.length - 1, anchorIdx + 2) };
+        constraintDesc = `Must be within 2 spots of <strong>${mcSequence[0]}</strong> (positions ${validRange.low + 1}–${validRange.high + 1}).`;
+      } else if (mcSequence.length === 2) {
+        const idx0 = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
+        const idx1 = mcGolfers.findIndex((g) => g.name === mcSequence[1]);
+        const minIdx = Math.min(idx0, idx1);
+        const maxIdx = Math.max(idx0, idx1);
+        validRange = { low: Math.max(0, minIdx - 1), high: Math.min(mcGolfers.length - 1, maxIdx + 1) };
+        constraintDesc = `Must be within 1 spot of the established range (positions ${validRange.low + 1}–${validRange.high + 1}).`;
+      }
+      const alreadyPickedNames = new Set(Object.values(mcData));
+      html += `
+      <div class="card mb-4">
+        <div class="section-title">🎲 Pick Your Missed Cut Golfer</div>
+        <div class="alert alert-warning mb-3">${constraintDesc}</div>
+        <input type="text" id="mc-search" placeholder="Search…" oninput="filterMC()" class="mb-3" />
+        <div id="mc-list" class="max-h-64 overflow-y-auto">
+          ${mcGolfers.length === 0
+            ? '<p class="text-gray-400 text-sm">No eligible golfers.</p>'
+            : mcGolfers.map((g, i) => {
+                const inRange = !validRange || (i >= validRange.low && i <= validRange.high);
+                const taken = alreadyPickedNames.has(g.name);
+                const clickable = inRange && !taken;
+                const badge = taken
+                  ? '<span class="text-xs text-gray-400">taken</span>'
+                  : !inRange
+                    ? '<span class="text-xs text-gray-400">out of range</span>'
+                    : '';
+                return `<div class="golfer-item${!clickable ? ' disabled opacity-50 pointer-events-none' : ''}" onclick="${clickable ? `pickMC('${g.name.replace(/'/g, "\\'")}')` : ''}">
+                  <span class="text-xs text-gray-300 w-6 shrink-0">${i + 1}</span>
+                  <span>${g.name}</span>
+                  ${badge}
+                </div>`;
+              }).join('')}
+        </div>
+      </div>`;
+    }
+  }
 
   // Day 1 & 2
   html += `
@@ -814,168 +908,7 @@ window.filterField = function() {
   });
 };
 
-// ── View: My Team ─────────────────────────────────────────────────────────────
-
-async function renderMyTeam(container) {
-  const [team, wcData, tournament, wcEligible, mcData, mcEligible] = await Promise.all([
-    api('GET', `/teams/${state.user}`),
-    api('GET', '/wc'),
-    api('GET', '/tournament'),
-    api('GET', '/wc/eligible'),
-    api('GET', '/missedcut').catch(() => ({})),
-    api('GET', '/missedcut/eligible').catch(() => []),
-  ]);
-
-  const myWC = wcData[state.user];
-  const status = tournament?.status;
-
-  let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">My Team — ${state.user}</h2>`;
-
-  // Draft picks
-  html += `
-  <div class="card mb-4">
-    <div class="section-title">Your 6 Draft Picks</div>
-    ${team.length === 0
-      ? '<p class="text-gray-400 text-sm">Draft not complete yet.</p>'
-      : team.map((g, i) => `
-        <div class="flex items-center gap-3 py-2 border-b border-gray-50">
-          <span class="text-sm font-bold text-green-700 w-5">${i + 1}</span>
-          <span class="text-sm font-medium">${g}</span>
-        </div>`).join('')}
-  </div>`;
-
-  // WC selection
-  if (status === 'wc_selection') {
-    if (myWC) {
-      html += `
-      <div class="card mb-4">
-        <div class="section-title">Wild Card Pick</div>
-        <div class="alert alert-success">You selected <strong>${myWC}</strong> as your Wild Card. 🎰</div>
-        <p class="text-sm text-gray-500">If ${myWC} wins the tournament, you collect $20 from each other player.</p>
-      </div>`;
-    } else {
-      const takenWC = new Set(Object.values(wcData).filter(Boolean));
-      html += `
-      <div class="card mb-4">
-        <div class="section-title">Pick Your Wild Card</div>
-        <div class="alert alert-warning mb-3">Choose one WC golfer from the bottom-50th-percentile eligible list. If they win the tournament, you get $20 from each other player!</div>
-        <input type="text" id="wc-search" placeholder="Search…" oninput="filterWC()" class="mb-3" />
-        <div id="wc-list" class="max-h-64 overflow-y-auto">
-          ${wcEligible.length === 0
-            ? '<p class="text-gray-400 text-sm">No WC eligible golfers (admin needs to mark them).</p>'
-            : wcEligible.map((g) => {
-              const takenBy = Object.entries(wcData).find(([, v]) => v === g.name);
-              if (takenBy) {
-                return `<div class="golfer-item disabled opacity-50 pointer-events-none">
-                  <span>${g.name}</span>
-                  <span class="text-xs text-gray-400">Picked by ${takenBy[0]}</span>
-                </div>`;
-              }
-              return `<div class="golfer-item" onclick="pickWC('${g.name.replace(/'/g, "\\'")}')">
-                <span>${g.name}</span>
-                <span class="badge badge-wc">WC eligible</span>
-              </div>`;
-            }).join('')}
-        </div>
-      </div>`;
-    }
-  } else if (myWC) {
-    html += `
-    <div class="card mb-4">
-      <div class="section-title">Wild Card Pick</div>
-      <div class="flex items-center gap-2">
-        <span class="badge badge-wc">WC</span>
-        <span class="font-medium">${myWC}</span>
-      </div>
-      <p class="text-sm text-gray-500 mt-1">If ${myWC} wins the tournament, you collect $20 from each other player.</p>
-    </div>`;
-  }
-
-  // Other teams WC status
-  html += `
-  <div class="card mb-4">
-    <div class="section-title">All Wild Card Picks</div>
-    ${Object.entries(wcData).map(([player, wc]) => `
-      <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
-        <span class="text-sm font-medium">${player}</span>
-        ${wc ? `<span class="text-sm text-gray-700">${wc} <span class="badge badge-wc">WC</span></span>` : `<span class="text-sm text-gray-400 italic">Not yet selected</span>`}
-      </div>`).join('')}
-  </div>`;
-
-  // Missed cut pick selection
-  const myMCPick = mcData[state.user];
-  const mcGolfers = mcEligible.golfers || [];
-  const mcSequence = mcEligible.sequence || [];
-  if (status === 'mc_pick') {
-    if (myMCPick) {
-      html += `
-      <div class="card mb-4">
-        <div class="section-title">🎲 Missed Cut Pick</div>
-        <div class="alert alert-success">You selected <strong>${myMCPick}</strong> to miss the cut.</div>
-      </div>`;
-    } else {
-      // Compute valid range based on anchor rules
-      let validRange = null;
-      let constraintDesc = "You're first! Your pick anchors the range for everyone else.";
-      if (mcSequence.length === 1) {
-        const anchorIdx = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
-        validRange = { low: Math.max(0, anchorIdx - 2), high: Math.min(mcGolfers.length - 1, anchorIdx + 2) };
-        constraintDesc = `Must be within 2 spots of <strong>${mcSequence[0]}</strong> (positions ${validRange.low + 1}–${validRange.high + 1}).`;
-      } else if (mcSequence.length === 2) {
-        const idx0 = mcGolfers.findIndex((g) => g.name === mcSequence[0]);
-        const idx1 = mcGolfers.findIndex((g) => g.name === mcSequence[1]);
-        const minIdx = Math.min(idx0, idx1);
-        const maxIdx = Math.max(idx0, idx1);
-        validRange = { low: Math.max(0, minIdx - 1), high: Math.min(mcGolfers.length - 1, maxIdx + 1) };
-        constraintDesc = `Must be within 1 spot of the established range (positions ${validRange.low + 1}–${validRange.high + 1}).`;
-      }
-      const alreadyPickedNames = new Set(Object.values(mcData));
-      html += `
-      <div class="card mb-4">
-        <div class="section-title">🎲 Pick Your Missed Cut Golfer</div>
-        <div class="alert alert-warning mb-3">${constraintDesc}</div>
-        <input type="text" id="mc-search" placeholder="Search…" oninput="filterMC()" class="mb-3" />
-        <div id="mc-list" class="max-h-64 overflow-y-auto">
-          ${mcGolfers.length === 0
-            ? '<p class="text-gray-400 text-sm">No eligible golfers.</p>'
-            : mcGolfers.map((g, i) => {
-                const inRange = !validRange || (i >= validRange.low && i <= validRange.high);
-                const taken = alreadyPickedNames.has(g.name);
-                const clickable = inRange && !taken;
-                const badge = taken
-                  ? '<span class="text-xs text-gray-400">taken</span>'
-                  : !inRange
-                    ? '<span class="text-xs text-gray-400">out of range</span>'
-                    : '';
-                return `<div class="golfer-item${!clickable ? ' disabled opacity-50 pointer-events-none' : ''}" onclick="${clickable ? `pickMC('${g.name.replace(/'/g, "\\'")}')` : ''}">
-                  <span class="text-xs text-gray-300 w-6 shrink-0">${i + 1}</span>
-                  <span>${g.name}</span>
-                  ${badge}
-                </div>`;
-              }).join('')}
-        </div>
-      </div>`;
-    }
-  }
-
-  // Missed cut bet (all picks, shown during/after mc_pick phase)
-  const users = Object.keys(wcData);
-  if (status === 'mc_pick' || Object.keys(mcData).length > 0) {
-    html += `
-    <div class="card mb-4">
-      <div class="section-title">🎲 All Missed Cut Picks</div>
-      ${users.map((player) => `
-        <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
-          <span class="text-sm font-medium ${player === state.user ? 'text-green-700' : ''}">${player}</span>
-          ${mcData[player]
-            ? `<span class="text-sm text-gray-700">${mcData[player]} <span class="badge badge-mc">MC</span></span>`
-            : `<span class="text-sm text-gray-400 italic">Not yet selected</span>`}
-        </div>`).join('')}
-    </div>`;
-  }
-
-  container.innerHTML = html;
-}
+// ── WC / MC pick helpers ──────────────────────────────────────────────────────
 
 window.filterWC = function() {
   const q = el('wc-search').value.toLowerCase();
@@ -989,7 +922,7 @@ window.pickWC = async function(golfer) {
   await api('POST', '/wc/pick', { golfer });
   showToast(`${golfer} is your Wild Card!`, 'success');
   state.tournament = await api('GET', '/tournament');
-  navigate('myTeam');
+  navigate('bets');
 };
 
 window.filterMC = function() {
@@ -1004,145 +937,8 @@ window.pickMC = async function(golfer) {
   await api('POST', '/missedcut/pick', { golfer });
   showToast(`${golfer} is your missed cut pick!`, 'success');
   state.tournament = await api('GET', '/tournament');
-  navigate('myTeam');
+  navigate('bets');
 };
-
-// ── View: Leaderboard ─────────────────────────────────────────────────────────
-
-async function renderLeaderboard(container) {
-  const [lb, users, tournament, scores] = await Promise.all([
-    api('GET', '/leaderboard'),
-    api('GET', '/users'),
-    api('GET', '/tournament'),
-    api('GET', '/scores'),
-  ]);
-
-  let html = `<h2 class="text-2xl font-bold text-green-800 mb-4">Leaderboard</h2>`;
-
-  // Summary payout table
-  const payoutSummary = computePayoutSummary(lb, users);
-  html += `
-  <div class="card mb-4">
-    <div class="section-title">💰 Money Summary</div>
-    <table class="score-table w-full">
-      <thead><tr>
-        <th>Player</th><th>Winnings</th><th>Losses</th><th class="text-right">Net</th>
-      </tr></thead>
-      <tbody>
-        ${users.map((u) => {
-          const ps = payoutSummary[u] || { won: 0, lost: 0 };
-          const net = ps.won - ps.lost;
-          return `<tr>
-            <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner">you</span>' : ''}</td>
-            <td class="money-positive">+$${ps.won}</td>
-            <td class="money-negative">-$${ps.lost}</td>
-            <td class="text-right font-bold ${net > 0 ? 'money-positive' : net < 0 ? 'money-negative' : 'money-neutral'}">${net >= 0 ? '+' : ''}$${net}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>`;
-
-  // Per-bet sections
-  const betDefs = [
-    { key: 'day1', label: 'Day 1 — All 6 Golfers' },
-    { key: 'day2', label: 'Day 2 — All 6 Golfers' },
-    { key: 'day3', label: 'Day 3 — Best 2 Golfers' },
-    { key: 'day4', label: 'Day 4 — Best 2 Golfers' },
-    { key: 'overall', label: 'Overall — Best 2 Cumulative' },
-  ];
-
-  for (const { key, label } of betDefs) {
-    const bet = lb[key];
-    if (!bet) continue;
-    html += renderBetCard(label, bet, users, tournament?.par || 72);
-  }
-
-  // WC Daily side bet
-  if (lb.wcDaily) {
-    const wcDayDefs = [
-      { key: 'day1', label: 'Day 1' },
-      { key: 'day2', label: 'Day 2' },
-      { key: 'day3', label: 'Day 3' },
-      { key: 'day4', label: 'Day 4' },
-    ];
-    for (const { key, label } of wcDayDefs) {
-      const wd = lb.wcDaily[key];
-      if (!wd) continue;
-      html += renderWCDailyCard(label, wd, tournament?.par || 72);
-    }
-  }
-
-  // WC
-  if (lb.wc) {
-    const wc = lb.wc;
-    html += `
-    <div class="card mb-4">
-      <div class="section-title">🎰 Wild Card</div>
-      ${Object.entries(wc.wcPicks || {}).map(([player, golfer]) => `
-        <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
-          <span class="text-sm font-medium">${player}</span>
-          <span class="text-sm">${golfer || '<span class="text-gray-400 italic">TBD</span>'}</span>
-        </div>`).join('')}
-      ${wc.resolved ? `
-        <div class="mt-3 pt-3 border-t border-gray-100">
-          <p class="text-sm"><strong>Tournament winner:</strong> ${wc.tournamentWinners?.join(', ')}</p>
-          ${wc.wcWinners?.length ? `
-            <div class="alert alert-success mt-2">
-              🏆 ${wc.wcWinners.join(' & ')} wins the WC bonus! (+$${wc.wcWinners.length > 0 ? 40 / wc.wcWinners.length * wc.wcWinners.length : 40} per winner)
-            </div>` : `<p class="text-sm text-gray-500 mt-1">No WC winner this tournament.</p>`}
-        </div>` : `<p class="text-sm text-gray-400 mt-3 italic">WC result revealed when tournament is complete.</p>`}
-    </div>`;
-  }
-
-  // Missed cut bet card
-  const mc = lb.missedCut;
-  if (mc && Object.keys(mc.picks || {}).length > 0) {
-    const mcResolved = mc.resolved;
-    const isWinner = (p) => mc.winner === p || (mc.winners && mc.winners.includes(p));
-    html += `
-    <div class="card mb-4">
-      <div class="section-title">🎲 Missed Cut Side Bet${!mcResolved ? ' <span class="badge badge-wd ml-1">Pending</span>' : ''}</div>
-      <table class="score-table w-full">
-        <thead><tr><th>Player</th><th>Golfer</th><th>Result</th></tr></thead>
-        <tbody>
-          ${users.filter((u) => mc.picks[u]).map((u) => {
-            const golfer = mc.picks[u];
-            const golferScores = scores[golfer] || {};
-            const isCut = Object.values(golferScores).some((v) => v === 'CUT');
-            const statusBadge = isCut
-              ? '<span class="badge badge-cut">CUT</span>'
-              : '<span class="badge" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0">Active</span>';
-            let resultCell = '<span class="text-gray-400">—</span>';
-            if (mcResolved) {
-              if (isWinner(u) && mc.type === 'winner') {
-                resultCell = `<span class="badge badge-winner">WIN +$${mc.losers.length * 5}</span>`;
-              } else if (isWinner(u) && mc.type === 'two_way_tie') {
-                resultCell = '<span class="badge badge-winner">TIE +$5</span>';
-              } else if (mc.type === 'three_way_tie') {
-                resultCell = '<span class="text-gray-400 text-xs">$0</span>';
-              } else if (mc.type === 'no_winner') {
-                resultCell = '<span class="text-gray-400 text-xs">$0</span>';
-              } else {
-                resultCell = '<span class="text-gray-400 text-xs">-$5</span>';
-              }
-            }
-            return `<tr>
-              <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner text-xs">you</span>' : ''}</td>
-              <td>${golfer} ${statusBadge}</td>
-              <td>${resultCell}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-      ${!mcResolved ? '<p class="text-xs text-amber-600 mt-2">Awaiting the cut after Round 2.</p>' : ''}
-      ${mcResolved && mc.type === 'three_way_tie' ? '<p class="text-xs text-gray-500 mt-2">All picked golfers missed the cut — no payout.</p>' : ''}
-      ${mcResolved && mc.type === 'no_winner' ? '<p class="text-xs text-gray-500 mt-2">No picked golfer missed the cut — no payout.</p>' : ''}
-    </div>`;
-  }
-
-  container.innerHTML = html;
-}
 
 function renderBetCard(label, bet, users, par) {
   const isWinner = (p) => bet.winner === p || (bet.winners && bet.winners.includes(p));
@@ -1457,6 +1253,32 @@ async function renderScoreboard(container) {
   // Group by owner for display
   const users = await api('GET', '/users');
 
+  // Money summary
+  if (hasBets) {
+    const payoutSummary = computePayoutSummary(lb, users);
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">💰 Money Summary</div>
+      <table class="score-table w-full">
+        <thead><tr>
+          <th>Player</th><th>Winnings</th><th>Losses</th><th class="text-right">Net</th>
+        </tr></thead>
+        <tbody>
+          ${users.map((u) => {
+            const ps = payoutSummary[u] || { won: 0, lost: 0 };
+            const net = ps.won - ps.lost;
+            return `<tr>
+              <td class="font-medium">${u}${u === state.user ? ' <span class="badge badge-winner">you</span>' : ''}</td>
+              <td class="money-positive">+$${ps.won}</td>
+              <td class="money-negative">-$${ps.lost}</td>
+              <td class="text-right font-bold ${net > 0 ? 'money-positive' : net < 0 ? 'money-negative' : 'money-neutral'}">${net >= 0 ? '+' : ''}$${net}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
   for (const user of users) {
     const golfers = teams[user] || [];
     html += `
@@ -1659,35 +1481,35 @@ function setupSocket() {
   socket.on('draft:complete', async () => {
     state.tournament = await api('GET', '/tournament');
     showToast('Draft complete! Select your Wild Card.', 'success');
-    navigate('myTeam');
+    navigate('bets');
   });
 
   socket.on('wc:picked', async ({ player }) => {
     showToast(`${player} picked their Wild Card`, 'info');
-    if (state.view === 'myTeam') navigate('myTeam');
+    if (state.view === 'bets') navigate('bets');
   });
 
   socket.on('mc:picked', async ({ player }) => {
     showToast(`${player} made their missed cut pick`, 'info');
-    if (state.view === 'myTeam') navigate('myTeam');
+    if (state.view === 'bets') navigate('bets');
   });
 
   socket.on('tournament:advanced', async ({ status }) => {
     state.tournament = await api('GET', '/tournament');
     if (status === 'mc_pick') {
       showToast('Wild Card picks done! Now pick your Missed Cut golfer.', 'success');
-      navigate('myTeam');
+      navigate('bets');
     } else if (status === 'day1') {
       showToast('All picks locked in! Tournament is live.', 'success');
-      navigate('leaderboard');
+      navigate('scoreboard');
     } else {
       showToast(`Tournament advanced to ${status}`, 'info');
-      if (['leaderboard', 'scoreboard', 'admin'].includes(state.view)) navigate(state.view);
+      if (['scoreboard', 'admin'].includes(state.view)) navigate(state.view);
     }
   });
 
   socket.on('scores:updated', () => {
-    if (state.view === 'leaderboard' || state.view === 'scoreboard') navigate(state.view);
+    if (state.view === 'scoreboard') navigate(state.view);
   });
 }
 
@@ -1724,7 +1546,7 @@ async function init() {
       state.tournament = await api('GET', '/tournament');
       document.title = state.tournament?.name || 'Golf Betting';
       setupSocket();
-      const allViews = ['admin', 'bets', 'draft', 'myTeam', 'leaderboard', 'scoreboard'];
+      const allViews = ['admin', 'bets', 'draft', 'scoreboard'];
       const hashView = location.hash.slice(1);
       const defaultView = state.role === 'patron' ? 'scoreboard' : routeFromStatus(state.tournament?.status);
       navigate(allViews.includes(hashView) ? hashView : defaultView);
