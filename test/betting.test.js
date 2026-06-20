@@ -303,6 +303,35 @@ describe('computeMissedCutResult', () => {
     expect(result.type).toBe('winner');
     expect(result.winner).toBe('Caleb');
   });
+
+  it('flags a missed cut by R1+R2 score even without a CUT marker', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day3', par: 70 };
+    setScore('Cantlay', 1, '70'); setScore('Cantlay', 2, '71'); // +1, made
+    setScore('Lowry', 1, '76'); setScore('Lowry', 2, '78');     // +14, missed
+    setScore('Thomas', 1, '69'); setScore('Thomas', 2, '70');   // -1, made
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.type).toBe('winner');
+    expect(result.winner).toBe('Caleb');
+    expect(result.details.Caleb).toEqual({ golfer: 'Lowry', missed: true });
+    expect(result.details.Mike).toEqual({ golfer: 'Cantlay', missed: false });
+  });
+
+  it('does not flag a made-cut golfer whose R1+R2 is under the line', async () => {
+    // Mirrors the Dustin Johnson case: +3 to par over two rounds, no CUT marker.
+    store['missedcut:picks'] = { Mike: 'Smith', Marshall: 'Johnson', Caleb: 'Koivun' };
+    store['tournament:meta'] = { status: 'day3', par: 70 };
+    setScore('Smith', 1, '75'); setScore('Smith', 2, '71');     // +6, missed
+    setScore('Johnson', 1, '66'); setScore('Johnson', 2, '77'); // +3, made
+    setScore('Koivun', 1, '72'); setScore('Koivun', 2, '71');   // +3, made
+
+    const result = await computeMissedCutResult(['Mike', 'Marshall', 'Caleb']);
+    expect(result.type).toBe('winner');
+    expect(result.winner).toBe('Mike');
+    expect(result.losers).toEqual(['Marshall', 'Caleb']);
+    expect(result.details.Marshall.missed).toBe(false);
+  });
 });
 
 // ── countGreenJackets ───────────────────────────────────────────────────────

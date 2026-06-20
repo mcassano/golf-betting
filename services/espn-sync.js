@@ -1,5 +1,9 @@
 import { get, set, del, mget, getJSON, setJSON } from './redis.js';
-import { encodeKey } from './scoring.js';
+import { encodeKey, isInProgress } from './scoring.js';
+
+// Strokes over par across R1+R2 that count as a missed cut. Matches the
+// didMissCut heuristic used by the UI and the missed-cut bet resolver.
+const CUT_THRESHOLD = 5;
 import { fetchTournament, fetchScores } from './espn.js';
 
 /**
@@ -103,37 +107,59 @@ export async function syncScores(io, date) {
 
   // Detect and mark missed-cut players. ESPN doesn't emit a 'CUT' marker —
   // players who missed the cut simply have no day3+ data. Golf cuts happen after
-  // round 2, so we only check day3: once day3 has started (any ESPN player has a
-  // day3 score), any stored player with a day2 score in Redis but no day3 score
-  // from ESPN missed the cut.
+  // round 2, so we only stamp CUT once round 3 is genuinely underway for the
+  // field (several ESPN players have a real day3 score). A player is marked CUT
+  // only when their R1+R2 is FINAL and over the cut line — this prevents stamping
+  // golfers whose round 2 is still in progress, and golfers ESPN simply hasn't
+  // posted a day3 score for yet (who otherwise made the cut). The same R1+R2
+  // check also self-heals any earlier spurious CUT.
   const currentDayN = { day3: 3, day4: 4, complete: 4 }[meta?.status];
-  if (currentDayN >= 3 && espnPlayers.some((ep) => ep.scores.day3 !== null)) {
+  const fieldInRound3 = espnPlayers.filter((ep) => ep.scores.day3 !== null).length >= 5;
+  if (currentDayN >= 3 && fieldInRound3) {
+    const par = meta?.par || 72;
     const batchKeys = [];
     for (const sp of storedPlayers) {
       const k = encodeKey(sp.name);
-      batchKeys.push(`scores:${k}:day2`, `scores:${k}:day3`, `scores:${k}:day4`);
+      batchKeys.push(
+        `scores:${k}:day1`, `scores:${k}:day2`, `scores:${k}:day3`, `scores:${k}:day4`,
+        `scores:${k}:day2:thru`,
+      );
     }
     const vals = batchKeys.length ? await mget(...batchKeys) : [];
 
     for (let i = 0; i < storedPlayers.length; i++) {
-      const day2Score = vals[i * 3];
-      const day3Score = vals[i * 3 + 1];
-      const day4Score = vals[i * 3 + 2];
+      const base = i * 5;
+      const day1Score = vals[base];
+      const day2Score = vals[base + 1];
+      const day3Score = vals[base + 2];
+      const day4Score = vals[base + 3];
+      const day2Thru = vals[base + 4];
       const k = encodeKey(storedPlayers[i].name);
 
-      // Clean up spurious day4 CUT: a player with a numeric day3 score made the
-      // cut and is playing day4 — any CUT on day4 was written in error.
-      if (day3Score && day3Score !== 'CUT' && day3Score !== 'WD' && day4Score === 'CUT') {
-        await del(`scores:${k}:day4`);
+      // R1+R2 relative to par, only once both rounds are finished numbers.
+      const n1 = parseInt(day1Score, 10);
+      const n2 = parseInt(day2Score, 10);
+      const r1r2Diff = (!isNaN(n1) && !isNaN(n2)) ? (n1 - par) + (n2 - par) : null;
+      const madeCutByScore = r1r2Diff !== null && r1r2Diff < CUT_THRESHOLD;
+      const day3IsReal = day3Score && day3Score !== 'CUT' && day3Score !== 'WD';
+
+      // Self-heal: a real day3 score, or an R1+R2 that clearly made the cut, means
+      // any earlier CUT stamp on day3/day4 was written in error — clear it.
+      if (day3IsReal || madeCutByScore) {
+        if (day3Score === 'CUT') { await del(`scores:${k}:day3`); updated++; }
+        if (day4Score === 'CUT') { await del(`scores:${k}:day4`); updated++; }
+        continue;
       }
 
-      // Skip if: no day2 score, already has day3 score, or day2 was WD
-      if (!day2Score || day2Score === 'WD' || day3Score !== null) continue;
+      // Only infer a missed cut when round 2 is final, over the cut line, and no
+      // day3 value already exists.
+      if (!day2Score || day2Score === 'WD' || isInProgress(day2Score, day2Thru)) continue;
+      if (day3Score !== null) continue;
+      if (r1r2Diff === null || r1r2Diff < CUT_THRESHOLD) continue;
 
       await set(`scores:${k}:day3`, 'CUT');
       updated++;
-      const day4Existing = await get(`scores:${k}:day4`);
-      if (day4Existing === null || day4Existing === undefined) {
+      if (day4Score === null || day4Score === undefined) {
         await set(`scores:${k}:day4`, 'CUT');
       }
     }

@@ -1,4 +1,5 @@
 import { get, mget, getJSON } from './redis.js';
+import { didMissCut } from '../public/scoring-utils.js';
 import {
   teamScoreForDay,
   teamScoreBest2ForDay,
@@ -13,41 +14,55 @@ export async function computeMissedCutResult(users) {
   const picks = await getJSON('missedcut:picks');
   if (!picks || Object.keys(picks).length === 0) return { resolved: false, picks: {} };
 
-  // Check each picked golfer for CUT status across all 4 days
+  const meta = await getJSON('tournament:meta');
+  const par = meta?.par || 72;
+
+  // Build a scores-shaped object per picked golfer and decide missed-cut the same
+  // way the UI does: an explicit CUT marker OR a completed R1+R2 of >= +5 to par.
+  // This keeps the bet result in lockstep with what's shown on screen and stops a
+  // spurious CUT stamp on a clearly-made-the-cut golfer from flipping the bet.
   const pickedGolfers = Object.values(picks);
   const scoreKeys = [];
   for (const golfer of pickedGolfers) {
     const key = encodeKey(golfer);
-    for (let d = 1; d <= 4; d++) {
-      scoreKeys.push(`scores:${key}:day${d}`);
-    }
+    for (let d = 1; d <= 4; d++) scoreKeys.push(`scores:${key}:day${d}`);
+    scoreKeys.push(`scores:${key}:day1:rel`, `scores:${key}:day2:rel`);
+    scoreKeys.push(`scores:${key}:day1:thru`, `scores:${key}:day2:thru`);
   }
   const scoreValues = scoreKeys.length ? await mget(...scoreKeys) : [];
 
-  // Determine which golfers missed the cut
+  // Determine which golfers missed the cut, and capture detail for display
   const golferCut = {};
+  const details = {};
   let idx = 0;
   for (const golfer of pickedGolfers) {
-    const dayScores = scoreValues.slice(idx, idx + 4);
-    golferCut[golfer] = dayScores.some((v) => v === 'CUT');
-    idx += 4;
+    const [d1, d2, d3, d4, d1Rel, d2Rel, d1Thru, d2Thru] = scoreValues.slice(idx, idx + 8);
+    idx += 8;
+    const scores = {
+      day1: d1, day2: d2, day3: d3, day4: d4,
+      day1Rel: d1Rel, day2Rel: d2Rel, day1Thru: d1Thru, day2Thru: d2Thru,
+    };
+    golferCut[golfer] = didMissCut(scores, par);
+  }
+  for (const user of users) {
+    if (picks[user]) details[user] = { golfer: picks[user], missed: golferCut[picks[user]] };
   }
 
-  // Check if the cut has actually been made (at least one golfer in the tournament has CUT,
-  // or we're past day2). If no golfer anywhere has CUT scores yet, bet is still pending.
+  // Check if the cut has actually been made (any picked golfer has missed, or we're
+  // past day2). If nobody has missed yet, the bet is still pending.
   const anyCutMade = Object.values(golferCut).some((v) => v);
   if (!anyCutMade) {
     // Check tournament status — if day3+, cut is made but none of our picks missed
-    const meta = await getJSON('tournament:meta');
     const statusOrder = ['setup', 'drafting', 'wc_selection', 'day1', 'day2', 'day3', 'day4', 'complete'];
     const currentIdx = statusOrder.indexOf(meta?.status || 'setup');
     if (currentIdx < statusOrder.indexOf('day3')) {
-      return { resolved: false, picks };
+      return { resolved: false, picks, details };
     }
-    // Past day2 and no picked golfer has CUT — no winner
+    // Past day2 and no picked golfer missed — no winner
     return {
       resolved: true,
       picks,
+      details,
       type: 'no_winner',
       winners: [],
       losers: users.filter((u) => picks[u]),
@@ -69,14 +84,14 @@ export async function computeMissedCutResult(users) {
 
   if (winners.length === users.length || (winners.length > 0 && losers.length === 0)) {
     return {
-      resolved: true, picks, type: 'three_way_tie',
+      resolved: true, picks, details, type: 'three_way_tie',
       winners, losers: [], payout: 'No payout — all picked golfers missed the cut',
     };
   }
 
   if (winners.length === 1) {
     return {
-      resolved: true, picks, type: 'winner',
+      resolved: true, picks, details, type: 'winner',
       winner: winners[0], winners, losers,
       payout: `+$${losers.length * 5}`,
     };
@@ -84,13 +99,13 @@ export async function computeMissedCutResult(users) {
 
   if (winners.length === 2) {
     return {
-      resolved: true, picks, type: 'two_way_tie',
+      resolved: true, picks, details, type: 'two_way_tie',
       winners, losers,
       payout: `${winners.join(' & ')} each collect $5 from ${losers[0]}`,
     };
   }
 
-  return { resolved: true, picks, type: 'no_winner', winners: [], losers: users, payout: 'No payout' };
+  return { resolved: true, picks, details, type: 'no_winner', winners: [], losers: users, payout: 'No payout' };
 }
 
 export function determineBetWinner(scores) {

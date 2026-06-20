@@ -1228,23 +1228,32 @@ async function renderScoreboard(container) {
       html += `</tr>`;
     }
 
-    // Missed Cut row
+    // Missed Cut rows — one line per picker showing their golfer's R1+R2 result,
+    // mirroring the detail shown for the other bets.
     if (mcBet && Object.keys(mcBet.picks || {}).length > 0) {
       html += `<tr><td colspan="${betLabels.length + 1}" class="border-t border-gray-100"></td></tr>`;
       html += `<tr><th></th><th colspan="${betLabels.length}">Missed Cut</th></tr>`;
-      html += `<tr><td></td>`;
-      if (!mcBet.resolved) {
-        html += `<td colspan="${betLabels.length}" class="text-gray-400 italic text-sm">pending</td>`;
-      } else if (mcBet.type === 'no_winner') {
-        html += `<td colspan="${betLabels.length}" class="text-gray-500 text-sm">No winner</td>`;
-      } else if (mcBet.type === 'three_way_tie') {
-        html += `<td colspan="${betLabels.length}" class="text-gray-500 text-sm">All missed — no payout</td>`;
-      } else if (mcBet.type === 'winner') {
-        html += `<td colspan="${betLabels.length}" class="text-green-700 font-semibold text-sm">${mcBet.winner} (${mcBet.picks[mcBet.winner]} CUT)</td>`;
-      } else if (mcBet.type === 'two_way_tie') {
-        html += `<td colspan="${betLabels.length}" class="text-green-700 font-semibold text-sm">${mcBet.winners.join(' & ')}</td>`;
+      const mcWinners = mcBet.type === 'winner' ? [mcBet.winner] : (mcBet.winners || []);
+      for (const [user, golfer] of Object.entries(mcBet.picks)) {
+        const s = scores[golfer] || {};
+        const { diff, count } = sumAllRelative([s.day1, s.day2], [s.day1Thru, s.day2Thru], [s.day1Rel, s.day2Rel], par);
+        const missed = didMissCut(s, par);
+        const isWin = mcWinners.includes(user);
+        const r1r2 = count ? `R1+R2 ${diffToParStr(diff)}` : '<span class="text-gray-400">—</span>';
+        const status = missed
+          ? '<span class="text-red-600 font-semibold">missed cut 💩</span>'
+          : '<span class="text-gray-500">made cut</span>';
+        const cls = isWin ? 'text-green-700 font-semibold' : 'text-gray-700';
+        html += `<tr><td></td><td colspan="${betLabels.length}" class="text-sm ${cls}">${user} — ${stripOdds(golfer)} · ${r1r2} · ${status}${isWin ? ' ✅' : ''}</td></tr>`;
       }
-      html += `</tr>`;
+      // Outcome / payout summary
+      let mcSummary;
+      if (!mcBet.resolved) mcSummary = '<span class="text-gray-400 italic">pending — cut not yet made</span>';
+      else if (mcBet.type === 'no_winner') mcSummary = '<span class="text-gray-500">No winner — no pick missed the cut</span>';
+      else if (mcBet.type === 'three_way_tie') mcSummary = '<span class="text-gray-500">All picks missed — no payout</span>';
+      else if (mcBet.type === 'winner') mcSummary = `<span class="text-green-700 font-semibold">${mcBet.winner} wins ${mcBet.payout}</span>`;
+      else if (mcBet.type === 'two_way_tie') mcSummary = `<span class="text-green-700 font-semibold">${mcBet.winners.join(' & ')} — ${mcBet.payout}</span>`;
+      html += `<tr><td></td><td colspan="${betLabels.length}" class="text-sm">${mcSummary}</td></tr>`;
     }
 
     html += `</tbody></table></div></div>`;
@@ -1390,12 +1399,31 @@ async function renderScoreboard(container) {
                   <td class="font-semibold">${wCount ? diffToParStr(wDiff) : '<span class="text-gray-300">—</span>'}</td>
                 </tr>`);
               }
+              // Missed-cut pick row — show day-by-day scores so the cut is visible,
+              // with the cut-relevant R1+R2 to-par in the total column.
+              const mcGolfer = mcData[user];
+              if (mcGolfer) {
+                const ms = scores[mcGolfer] || {};
+                const mDayScores = [ms.day1, ms.day2, ms.day3, ms.day4];
+                const mDayThrus = [ms.day1Thru, ms.day2Thru, ms.day3Thru, ms.day4Thru];
+                const mDayRels = [ms.day1Rel, ms.day2Rel, ms.day3Rel, ms.day4Rel];
+                const mMissed = didMissCut(ms, p);
+                const { diff: mDiff, count: mCount } = sumAllRelative([ms.day1, ms.day2], [ms.day1Thru, ms.day2Thru], [ms.day1Rel, ms.day2Rel], p);
+                rows.push(`<tr class="border-t border-dashed border-gray-200">
+                  <td class="font-medium text-purple-700">🎲 ${stripOdds(mcGolfer)} <span class="badge ml-1" style="background:#ede9fe;color:#6d28d9">MC</span></td>
+                  ${mDayScores.map((v, idx) => {
+                    const isR34MissedCut = mMissed && (idx === 2 || idx === 3);
+                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    return `<td${tdCls}>${dayCell(v, p, mDayThrus[idx], mDayRels[idx], isR34MissedCut)}</td>`;
+                  }).join('')}
+                  <td class="font-semibold" title="R1+R2 to par">${mCount ? `R1+R2 ${diffToParStr(mDiff)}` : '<span class="text-gray-300">—</span>'}</td>
+                </tr>`);
+              }
               return rows.join('');
             })()}
           </tbody>
         </table>
       </div>
-      ${mcData[user] ? `<p class="text-xs text-purple-600 mt-1">🎲 MC Bet: ${mcData[user]}</p>` : ''}
     </div>`;
   }
 
