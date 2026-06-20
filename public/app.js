@@ -339,7 +339,7 @@ async function renderAdmin(container) {
         const isInProgress = val && val !== 'CUT' && val !== 'WD' && thru && thru !== 'F' && thru !== '18';
         const borderColor = isInProgress ? 'border-yellow-400 bg-yellow-50' : isActive ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white';
         const isR34MissedCut = missedCut && (d === 3 || d === 4);
-        const tdCls = isR34MissedCut ? 'p-1 cell-missed-cut' : 'p-1';
+        const tdCls = 'p-1';
         return `<td class="${tdCls}">
           <div class="relative inline-block">
             <input
@@ -1263,10 +1263,10 @@ async function renderScoreboard(container) {
         const isWin = mcWinners.includes(user);
         const r1r2 = count ? `R1+R2 ${diffToParStr(diff)}` : '<span class="text-gray-400">—</span>';
         const status = missed
-          ? '<span class="badge badge-cut">CUT</span>'
+          ? '<span class="text-gray-500">did not make cut</span>'
           : '<span class="text-gray-500">made cut</span>';
         const cls = isWin ? 'text-green-700 font-semibold' : 'text-gray-700';
-        html += `<tr><td></td><td colspan="${betLabels.length}" class="text-sm ${cls}">${user} — ${stripOdds(golfer)} · ${r1r2} · ${status}${isWin ? ' ✅' : ''}</td></tr>`;
+        html += `<tr><td></td><td colspan="${betLabels.length}" class="text-sm ${cls}">${user} — ${stripOdds(golfer)} · ${r1r2} · ${status}</td></tr>`;
       }
       // Outcome / payout summary
       let mcSummary;
@@ -1353,7 +1353,7 @@ async function renderScoreboard(container) {
                   </td>
                   ${dayScores.map((v, idx) => {
                     const isR34MissedCut = missedCut && (idx === 2 || idx === 3);
-                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    const tdCls = '';
                     return `<td${tdCls}>${dayCell(v, p, dayThrus[idx], dayRels[idx], isR34MissedCut)}</td>`;
                   }).join('')}
                   <td class="font-semibold">${totalCount ? diffToParStr(totalDiff) : '<span class="text-gray-300">—</span>'}</td>
@@ -1435,7 +1435,7 @@ async function renderScoreboard(container) {
                   <td class="font-medium text-purple-700">🎲 ${stripOdds(mcGolfer)} <span class="badge ml-1" style="background:#ede9fe;color:#6d28d9">MC</span></td>
                   ${mDayScores.map((v, idx) => {
                     const isR34MissedCut = mMissed && (idx === 2 || idx === 3);
-                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    const tdCls = '';
                     return `<td${tdCls}>${dayCell(v, p, mDayThrus[idx], mDayRels[idx], isR34MissedCut)}</td>`;
                   }).join('')}
                   <td class="font-semibold" title="R1+R2 to par">${mCount ? `R1+R2 ${diffToParStr(mDiff)}` : '<span class="text-gray-300">—</span>'}</td>
@@ -1479,7 +1479,7 @@ async function renderScoreboard(container) {
                   <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>
                   ${dayScores.map((v, idx) => {
                     const isR34MissedCut = missedCut && (idx === 2 || idx === 3);
-                    const tdCls = isR34MissedCut ? ' class="cell-missed-cut"' : '';
+                    const tdCls = '';
                     return `<td${tdCls}>${dayCell(v, p, dayThrus[idx], dayRels[idx], isR34MissedCut)}</td>`;
                   }).join('')}
                   <td class="font-semibold">${count ? diffToParStr(diff) : '—'}</td>
