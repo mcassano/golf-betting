@@ -14,7 +14,7 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
    - **Overall**: Best 2 golfers by cumulative 4-day total wins $5 from each loser.
    - **Wild Card (tournament)**: If your WC golfer wins the tournament, you collect $20 from each opponent.
    - **Wild Card (daily)**: On any day a wildcard golfer has the sole lowest round across all 21 selected golfers (drafted + WC), the WC owner collects $5 from each opponent. Ties between WC golfers split; any tie with a drafted golfer voids the payout.
-   - **Missed Cut**: Each player picks one golfer they think will miss the cut. If your golfer misses the cut, you collect $5 from each loser. If multiple golfers miss, each winner collects from the remaining losers. If all miss or none miss, no payout. Picks are set via admin; the bet resolves automatically after the cut is made.
+   - **Missed Cut**: Each player picks one golfer they think will miss the cut. If your golfer misses the cut, you collect $5 from each loser. If multiple golfers miss, each winner collects from the remaining losers. If all miss or none miss, no payout. Picks are set via admin; the bet resolves automatically after the cut is made. The admin enters the **cut line** (to par) when advancing to Day 3 — a golfer missed the cut if they have an explicit CUT or their R1+R2 is worse than the line. The cut line defaults to +4 if not set.
 
 ## Withdrawals (WD)
 

@@ -135,11 +135,18 @@ router.post('/admin/tournament/reset', requireUser, async (req, res) => {
 });
 
 router.post('/admin/tournament/advance', requireUser, async (req, res) => {
-  const { status } = req.body;
+  const { status, cutLine } = req.body;
   const valid = ['day1', 'day2', 'day3', 'day4', 'complete'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const meta = await getJSON('tournament:meta');
   if (!meta) return res.status(400).json({ error: 'No tournament' });
+  // The cut is set after round 2, so the to-par cut line is required when
+  // advancing into day3. Scores at or below the line made the cut.
+  if (status === 'day3') {
+    const cl = parseInt(cutLine, 10);
+    if (!Number.isFinite(cl)) return res.status(400).json({ error: 'cutLine (to par) required to advance to Day 3' });
+    meta.cutLine = cl;
+  }
   meta.status = status;
   await setJSON('tournament:meta', meta);
   emit('tournament:advanced', { status });

@@ -25,12 +25,14 @@ export function toParStr(total, played, par) {
   return diffToParStr(total - played * par);
 }
 
-// Did this golfer miss the cut? True if any day is flagged 'CUT', OR if
-// R1+R2 to-par is ≥ +5 (the Masters cut rule). Accepts a `scores` object
-// shaped like { day1, day2, day1Rel, day2Rel, day1Thru, day2Thru, ... }.
-// Uses ESPN rel values when available and only falls back to gross-par
-// for a finished round (so an in-progress R1 or R2 never triggers).
-export function didMissCut(scores, par) {
+// Did this golfer miss the cut? True if any day is flagged 'CUT', OR if their
+// R1+R2 to-par is worse than `cutLine` (scores at or below the line made it).
+// `cutLine` is the to-par cut line for the event (e.g. +4); it defaults to 4,
+// which reproduces the legacy "+5 and worse missed" rule. Accepts a `scores`
+// object shaped like { day1, day2, day1Rel, day2Rel, day1Thru, day2Thru, ... }.
+// Uses ESPN rel values when available and only falls back to gross-par for a
+// finished round (so an in-progress R1 or R2 never triggers).
+export function didMissCut(scores, par, cutLine = 4) {
   if (!scores) return false;
   const days = [scores.day1, scores.day2, scores.day3, scores.day4];
   if (days.some((v) => v === 'CUT')) return true;
@@ -47,7 +49,7 @@ export function didMissCut(scores, par) {
   const d1 = dayDiff(scores.day1, scores.day1Rel, scores.day1Thru);
   const d2 = dayDiff(scores.day2, scores.day2Rel, scores.day2Thru);
   if (d1 === null || d2 === null) return false;
-  return d1 + d2 >= 5;
+  return d1 + d2 > cutLine;
 }
 
 // Sum all rounds (including in-progress) using ESPN rel values where available,

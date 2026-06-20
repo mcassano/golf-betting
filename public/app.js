@@ -52,7 +52,7 @@ function stripOdds(name) { return name.replace(/\s\+\d+$/, ''); }
 // Render a round score with thru info.
 // Completed: "-5 F 67"  In-progress: "-3 thru 12"  Not started: "—"
 function dayCell(v, par, thru, rel, missedCut = false) {
-  if (missedCut) return '<span class="cell-mc" title="Missed cut">💩</span>';
+  if (missedCut) return '<span class="badge badge-cut" title="Missed cut">CUT</span>';
   if (v === undefined || v === null || v === '') return '<span class="text-gray-300">—</span>';
   if (v === 'CUT') return '<span class="badge badge-cut">CUT</span>';
   if (v === 'WD') return '<span class="badge badge-wd">WD</span>';
@@ -328,9 +328,10 @@ async function renderAdmin(container) {
     const draftedPlayers = players.filter((p) => draftedNames.has(p.name));
     const currentDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 }[status] || 1;
     const par = tournament?.par || 72;
+    const cutLine = Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4;
     const rows = draftedPlayers.map((p) => {
       const s = scores[p.name] || {};
-      const missedCut = didMissCut(s, par);
+      const missedCut = didMissCut(s, par, cutLine);
       const cells = [1, 2, 3, 4].map((d) => {
         const val = s[`day${d}`] || '';
         const thru = s[`day${d}Thru`];
@@ -346,7 +347,7 @@ async function renderAdmin(container) {
               data-golfer="${p.name.replace(/"/g, '&quot;')}"
               data-day="${d}"
               value="${val}"
-              placeholder="${isR34MissedCut ? '💩' : (isActive ? '—' : '')}"
+              placeholder="${isR34MissedCut ? 'CUT' : (isActive ? '—' : '')}"
               onblur="saveScoreCell(this)"
               onkeydown="scoreGridKeydown(event, this)"
               class="score-cell w-16 text-center border rounded px-1 py-0.5 text-sm font-mono ${borderColor} ${val === 'CUT' || val === 'WD' ? 'text-red-500' : ''}"
@@ -428,9 +429,17 @@ async function renderAdmin(container) {
   const nextStatus = { setup: null, drafting: null, wc_selection: null, day1: 'day2', day2: 'day3', day3: 'day4', day4: 'complete', complete: null };
   const nextLabels = { day2: 'Advance to Day 2', day3: 'Advance to Day 3', day4: 'Advance to Day 4', complete: 'Mark Tournament Complete' };
   if (status && nextStatus[status]) {
+    const advancingToDay3 = nextStatus[status] === 'day3';
     html += `
     <div class="card mb-4">
       <div class="section-title">Tournament Status: <span class="text-green-700">${status}</span></div>
+      ${advancingToDay3 ? `
+      <div class="mb-2">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Cut line (to par) — required</label>
+        <input id="cut-line-input" type="number" step="1" placeholder="e.g. 4"
+          class="border rounded px-2 py-1 w-24" />
+        <p class="text-xs text-gray-400 mt-1">Scores at or below this made the cut. R1+R2 worse than the line counts as a missed cut.</p>
+      </div>` : ''}
       <button onclick="advanceTournament('${nextStatus[status]}')" class="btn btn-secondary">
         ${nextLabels[nextStatus[status]]}
       </button>
@@ -554,8 +563,20 @@ window.scoreGridKeydown = function(e, input) {
 };
 
 window.advanceTournament = async function(status) {
-  if (!confirm(`Advance tournament to ${status}?`)) return;
-  await api('POST', '/admin/tournament/advance', { status });
+  const body = { status };
+  if (status === 'day3') {
+    const raw = document.getElementById('cut-line-input')?.value;
+    const cutLine = parseInt(raw, 10);
+    if (!Number.isFinite(cutLine)) {
+      showToast('Enter the cut line (to par) before advancing to Day 3', 'error');
+      return;
+    }
+    if (!confirm(`Advance to Day 3 with cut line ${cutLine >= 0 ? '+' : ''}${cutLine} to par?`)) return;
+    body.cutLine = cutLine;
+  } else if (!confirm(`Advance tournament to ${status}?`)) {
+    return;
+  }
+  await api('POST', '/admin/tournament/advance', body);
   state.tournament = await api('GET', '/tournament');
   showToast(`Status: ${status}`, 'success');
   navigate('admin');
@@ -1071,6 +1092,7 @@ async function renderScoreboard(container) {
 
   // Bet winners summary
   const par = tournament?.par || 72;
+  const cutLine = Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4;
   const relStr = (score, rounds) => {
     const diff = score - rounds * par;
     if (diff === 0) return 'E';
@@ -1237,11 +1259,11 @@ async function renderScoreboard(container) {
       for (const [user, golfer] of Object.entries(mcBet.picks)) {
         const s = scores[golfer] || {};
         const { diff, count } = sumAllRelative([s.day1, s.day2], [s.day1Thru, s.day2Thru], [s.day1Rel, s.day2Rel], par);
-        const missed = didMissCut(s, par);
+        const missed = didMissCut(s, par, cutLine);
         const isWin = mcWinners.includes(user);
         const r1r2 = count ? `R1+R2 ${diffToParStr(diff)}` : '<span class="text-gray-400">—</span>';
         const status = missed
-          ? '<span class="text-red-600 font-semibold">missed cut 💩</span>'
+          ? '<span class="badge badge-cut">CUT</span>'
           : '<span class="text-gray-500">made cut</span>';
         const cls = isWin ? 'text-green-700 font-semibold' : 'text-gray-700';
         html += `<tr><td></td><td colspan="${betLabels.length}" class="text-sm ${cls}">${user} — ${stripOdds(golfer)} · ${r1r2} · ${status}${isWin ? ' ✅' : ''}</td></tr>`;
@@ -1318,7 +1340,7 @@ async function renderScoreboard(container) {
                   dayDiffs.push(count ? diff : null);
                   dayHas.push(count > 0);
                 }
-                const missedCut = didMissCut(s, p);
+                const missedCut = didMissCut(s, p, cutLine);
                 const { diff: totalDiff, count: totalCount } = sumAllRelative(dayScores, dayThrus, dayRels, p);
                 return { g, s, dayScores, dayThrus, dayRels, dayDiffs, dayHas, totalDiff, totalCount, missedCut };
               });
@@ -1407,7 +1429,7 @@ async function renderScoreboard(container) {
                 const mDayScores = [ms.day1, ms.day2, ms.day3, ms.day4];
                 const mDayThrus = [ms.day1Thru, ms.day2Thru, ms.day3Thru, ms.day4Thru];
                 const mDayRels = [ms.day1Rel, ms.day2Rel, ms.day3Rel, ms.day4Rel];
-                const mMissed = didMissCut(ms, p);
+                const mMissed = didMissCut(ms, p, cutLine);
                 const { diff: mDiff, count: mCount } = sumAllRelative([ms.day1, ms.day2], [ms.day1Thru, ms.day2Thru], [ms.day1Rel, ms.day2Rel], p);
                 rows.push(`<tr class="border-t border-dashed border-gray-200">
                   <td class="font-medium text-purple-700">🎲 ${stripOdds(mcGolfer)} <span class="badge ml-1" style="background:#ede9fe;color:#6d28d9">MC</span></td>
@@ -1451,7 +1473,7 @@ async function renderScoreboard(container) {
                   const { diff, count } = sumAllRelative([dayScores[d]], [dayThrus[d]], [dayRels[d]], p);
                   if (count) { dayTotals[d] += diff; dayCounts[d] += count; }
                 }
-                const missedCut = didMissCut(s, p);
+                const missedCut = didMissCut(s, p, cutLine);
                 const { diff, count } = sumAllRelative(dayScores, dayThrus, dayRels, p);
                 return `<tr>
                   <td>${g}${wcSet.has(g) ? ' <span class="badge badge-wc">WC</span>' : ''}</td>

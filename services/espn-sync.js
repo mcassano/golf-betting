@@ -1,9 +1,10 @@
 import { get, set, del, mget, getJSON, setJSON } from './redis.js';
 import { encodeKey, isInProgress } from './scoring.js';
 
-// Strokes over par across R1+R2 that count as a missed cut. Matches the
-// didMissCut heuristic used by the UI and the missed-cut bet resolver.
-const CUT_THRESHOLD = 5;
+// Default to-par cut line when the admin hasn't entered one (scores at or below
+// the line made the cut). 4 reproduces the legacy "+5 and worse missed" rule and
+// matches the didMissCut default used by the UI and the missed-cut bet resolver.
+const DEFAULT_CUT_LINE = 4;
 import { fetchTournament, fetchScores } from './espn.js';
 
 /**
@@ -109,14 +110,15 @@ export async function syncScores(io, date) {
   // players who missed the cut simply have no day3+ data. Golf cuts happen after
   // round 2, so we only stamp CUT once round 3 is genuinely underway for the
   // field (several ESPN players have a real day3 score). A player is marked CUT
-  // only when their R1+R2 is FINAL and over the cut line — this prevents stamping
-  // golfers whose round 2 is still in progress, and golfers ESPN simply hasn't
-  // posted a day3 score for yet (who otherwise made the cut). The same R1+R2
-  // check also self-heals any earlier spurious CUT.
+  // only when their R1+R2 is FINAL and worse than the cut line — this prevents
+  // stamping golfers whose round 2 is still in progress, and golfers ESPN simply
+  // hasn't posted a day3 score for yet (who otherwise made the cut). The same
+  // R1+R2 check also self-heals any earlier spurious CUT.
   const currentDayN = { day3: 3, day4: 4, complete: 4 }[meta?.status];
   const fieldInRound3 = espnPlayers.filter((ep) => ep.scores.day3 !== null).length >= 5;
   if (currentDayN >= 3 && fieldInRound3) {
     const par = meta?.par || 72;
+    const cutLine = Number.isFinite(meta?.cutLine) ? meta.cutLine : DEFAULT_CUT_LINE;
     const batchKeys = [];
     for (const sp of storedPlayers) {
       const k = encodeKey(sp.name);
@@ -140,7 +142,7 @@ export async function syncScores(io, date) {
       const n1 = parseInt(day1Score, 10);
       const n2 = parseInt(day2Score, 10);
       const r1r2Diff = (!isNaN(n1) && !isNaN(n2)) ? (n1 - par) + (n2 - par) : null;
-      const madeCutByScore = r1r2Diff !== null && r1r2Diff < CUT_THRESHOLD;
+      const madeCutByScore = r1r2Diff !== null && r1r2Diff <= cutLine;
       const day3IsReal = day3Score && day3Score !== 'CUT' && day3Score !== 'WD';
 
       // Self-heal: a real day3 score, or an R1+R2 that clearly made the cut, means
@@ -151,11 +153,11 @@ export async function syncScores(io, date) {
         continue;
       }
 
-      // Only infer a missed cut when round 2 is final, over the cut line, and no
-      // day3 value already exists.
+      // Only infer a missed cut when round 2 is final, worse than the cut line,
+      // and no day3 value already exists.
       if (!day2Score || day2Score === 'WD' || isInProgress(day2Score, day2Thru)) continue;
       if (day3Score !== null) continue;
-      if (r1r2Diff === null || r1r2Diff < CUT_THRESHOLD) continue;
+      if (r1r2Diff === null || r1r2Diff <= cutLine) continue;
 
       await set(`scores:${k}:day3`, 'CUT');
       updated++;

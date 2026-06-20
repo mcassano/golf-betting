@@ -78,9 +78,8 @@ html, body {
 }
 .badge-cut { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 
-/* Drafted golfer missed the cut: tint R3/R4 cells and show poop emoji */
+/* Drafted golfer missed the cut: tint R3/R4 cells and show the CUT badge */
 .score-table td.cell-missed-cut { background: #fef2f2; }
-.cell-mc { font-size: 1.1rem; }
 .badge-wd  { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
 .badge-wc  { background: #fefce8; color: #ca8a04; border: 1px solid #fde68a; }
 .badge-mc  { background: #faf5ff; color: #7c3aed; border: 1px solid #ddd6fe; }

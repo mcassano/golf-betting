@@ -223,4 +223,25 @@ describe('didMissCut', () => {
     const s = { day1: '76', day2: 'WD', day1Rel: '+4' };
     expect(didMissCut(s, par)).toBe(false);
   });
+
+  it('honors an explicit cut line: +3 made when the line is +4', () => {
+    // Dustin Johnson case: 66 + 77 = +3 to par at par 70
+    const s = { day1: '66', day2: '77', day1Thru: 'F', day2Thru: 'F' };
+    expect(didMissCut(s, 70, 4)).toBe(false);
+  });
+
+  it('honors an explicit cut line: +5 misses when the line is +4', () => {
+    const s = { day1: '74', day2: '75', day1Thru: 'F', day2Thru: 'F' }; // +9 at par 70
+    expect(didMissCut(s, 70, 4)).toBe(true);
+  });
+
+  it('honors a tighter cut line: +3 misses when the line is +2', () => {
+    const s = { day1: '66', day2: '77', day1Thru: 'F', day2Thru: 'F' }; // +3 at par 70
+    expect(didMissCut(s, 70, 2)).toBe(true);
+  });
+
+  it('made the cut exactly at the line (not worse than)', () => {
+    const s = { day1: '72', day2: '72', day1Thru: 'F', day2Thru: 'F' }; // +4 at par 70
+    expect(didMissCut(s, 70, 4)).toBe(false);
+  });
 });

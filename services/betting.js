@@ -16,9 +16,10 @@ export async function computeMissedCutResult(users) {
 
   const meta = await getJSON('tournament:meta');
   const par = meta?.par || 72;
+  const cutLine = Number.isFinite(meta?.cutLine) ? meta.cutLine : 4;
 
   // Build a scores-shaped object per picked golfer and decide missed-cut the same
-  // way the UI does: an explicit CUT marker OR a completed R1+R2 of >= +5 to par.
+  // way the UI does: an explicit CUT marker OR a completed R1+R2 worse than the cut line.
   // This keeps the bet result in lockstep with what's shown on screen and stops a
   // spurious CUT stamp on a clearly-made-the-cut golfer from flipping the bet.
   const pickedGolfers = Object.values(picks);
@@ -42,7 +43,7 @@ export async function computeMissedCutResult(users) {
       day1: d1, day2: d2, day3: d3, day4: d4,
       day1Rel: d1Rel, day2Rel: d2Rel, day1Thru: d1Thru, day2Thru: d2Thru,
     };
-    golferCut[golfer] = didMissCut(scores, par);
+    golferCut[golfer] = didMissCut(scores, par, cutLine);
   }
   for (const user of users) {
     if (picks[user]) details[user] = { golfer: picks[user], missed: golferCut[picks[user]] };
