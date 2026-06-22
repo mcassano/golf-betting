@@ -8,7 +8,7 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
 2. **Draft** — A snake draft (6 rounds) assigns 6 golfers to each user.
 3. **Wild Card** — Each user picks one WC-eligible golfer (bottom 50th percentile). If that golfer wins the tournament, the user collects $20 from each opponent.
 4. **Scoring** — Admin enters daily scores. The app computes daily and overall standings.
-5. **Payouts** — Six bets run simultaneously:
+5. **Payouts** — Six bets run simultaneously. A daily bet's winner is only declared once the admin advances the tournament past that day (Day 1 resolves when status moves to Day 2, … Day 4 and Overall resolve when the tournament is marked Complete). Until then live scores show but no winner is stamped, so a day never resolves just because some teams finished their round early.
    - **Days 1 & 2**: Lowest combined score across all 6 golfers wins $5 from each loser. If any team has WDs, all teams score their best `6 - maxWDs` golfers that day to keep things fair.
    - **Days 3 & 4**: Lowest score from your best 2 golfers that day wins $5 from each loser.
    - **Overall**: Best 2 golfers by cumulative 4-day total wins $5 from each loser.

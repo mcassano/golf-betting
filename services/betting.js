@@ -150,6 +150,12 @@ export async function computeLeaderboard(users, meta) {
   for (const { key, n, useAll6, minStatusIdx } of dayDefs) {
     if (currentIdx < minStatusIdx) continue;
 
+    // A day's winner is only declared once the tournament has advanced PAST that
+    // day (Day 1 reveals at Day 2, ... Day 4 reveals at Complete). While the day
+    // is the current/active one we still show live scores, but no winner yet —
+    // otherwise the bet resolves as soon as a subset of teams finish their round.
+    const closed = currentIdx > minStatusIdx;
+
     if (useAll6) {
       // Days 1 & 2: compute bestN based on max WDs across all teams
       const teamGolfers = {};
@@ -178,7 +184,7 @@ export async function computeLeaderboard(users, meta) {
         scores[user] = res.partial ? null : res.total;
         if (res.partial) anyPartial = true;
       }
-      result[key] = { scores, partial: anyPartial, bestN, rounds: bestN, ...determineBetWinner(scores) };
+      result[key] = { scores, partial: anyPartial, bestN, rounds: bestN, ...(closed ? determineBetWinner(scores) : { type: 'pending' }) };
     } else {
       // Days 3 & 4: best 2, unchanged
       const scores = {};
@@ -188,7 +194,7 @@ export async function computeLeaderboard(users, meta) {
         scores[user] = res.partial ? null : res.total;
         if (res.partial) anyPartial = true;
       }
-      result[key] = { scores, partial: anyPartial, rounds: 2, ...determineBetWinner(scores) };
+      result[key] = { scores, partial: anyPartial, rounds: 2, ...(closed ? determineBetWinner(scores) : { type: 'pending' }) };
     }
   }
 
@@ -202,14 +208,21 @@ export async function computeLeaderboard(users, meta) {
       if (res.partial) anyPartial = true;
     }
     // Overall = best 2 cumulative across all 4 days → 8 round-scores per team.
-    result.overall = { scores: overallScores, partial: anyPartial, rounds: 8, ...determineBetWinner(overallScores) };
+    // Like the daily bets, the overall winner is only declared once the
+    // tournament is Complete; before that we show live cumulative scores only.
+    const overallClosed = status === 'complete';
+    result.overall = { scores: overallScores, partial: anyPartial, rounds: 8, ...(overallClosed ? determineBetWinner(overallScores) : { type: 'pending' }) };
   }
 
   // WC daily side bet (days 1-4 only, reuse dayDefs loop)
   result.wcDaily = {};
   for (const { key, n, minStatusIdx } of dayDefs) {
     if (currentIdx < minStatusIdx) continue;
-    result.wcDaily[key] = await computeWCDailyResult(users, n);
+    // Same rule as the daily bets: don't declare a WC daily winner until the
+    // tournament has advanced past that day.
+    result.wcDaily[key] = currentIdx > minStatusIdx
+      ? await computeWCDailyResult(users, n)
+      : { type: 'pending' };
   }
 
   // WC result available when complete

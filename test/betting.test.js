@@ -10,7 +10,7 @@ vi.mock('../services/redis.js', () => ({
   setJSON: vi.fn((key, val) => { store[key] = val; return Promise.resolve(); }),
 }));
 
-import { determineBetWinner, computeWCDailyResult, computeWCResult } from '../services/betting.js';
+import { determineBetWinner, computeWCDailyResult, computeWCResult, computeLeaderboard } from '../services/betting.js';
 
 function clearStore() {
   for (const key of Object.keys(store)) delete store[key];
@@ -58,6 +58,48 @@ describe('determineBetWinner', () => {
     const result = determineBetWinner({ alice: 136, bob: null, charlie: 140 });
     expect(result.type).toBe('winner');
     expect(result.winner).toBe('alice');
+  });
+});
+
+// ── computeLeaderboard day gating ────────────────────────────────────────────
+
+describe('computeLeaderboard — daily winners only show once the day is over', () => {
+  const users = ['Mike', 'Caleb'];
+
+  // Two teams of 6, each golfer with a numeric Day 1 score. Mike's total is
+  // lower, so once Day 1 is closed he wins it.
+  function seedFullDay1() {
+    setTeam('Mike', ['A', 'B', 'C', 'D', 'E', 'F']);
+    setTeam('Caleb', ['G', 'H', 'I', 'J', 'K', 'L']);
+    for (const g of ['A', 'B', 'C', 'D', 'E', 'F']) setScore(g, 1, '70');
+    for (const g of ['G', 'H', 'I', 'J', 'K', 'L']) setScore(g, 1, '72');
+  }
+
+  it('keeps Day 1 pending while status is still day1, even with every score in', async () => {
+    seedFullDay1();
+    const lb = await computeLeaderboard(users, { status: 'day1' });
+    expect(lb.day1.type).toBe('pending');
+    expect(lb.day1.winner).toBeUndefined();
+    // Scores are still computed so live standings remain visible elsewhere.
+    expect(lb.day1.scores).toEqual({ Mike: 420, Caleb: 432 });
+  });
+
+  it('declares the Day 1 winner once the tournament advances to Day 2', async () => {
+    seedFullDay1();
+    const lb = await computeLeaderboard(users, { status: 'day2' });
+    expect(lb.day1.type).toBe('winner');
+    expect(lb.day1.winner).toBe('Mike');
+    // Day 2 (now the active day) is still pending.
+    expect(lb.day2.type).toBe('pending');
+  });
+
+  it('does not declare a Day 1 winner from the subset of teams that finished first', async () => {
+    // Only Mike's team has posted; Caleb's is still blank (in progress).
+    setTeam('Mike', ['A', 'B', 'C', 'D', 'E', 'F']);
+    setTeam('Caleb', ['G', 'H', 'I', 'J', 'K', 'L']);
+    for (const g of ['A', 'B', 'C', 'D', 'E', 'F']) setScore(g, 1, '70');
+    const lb = await computeLeaderboard(users, { status: 'day1' });
+    expect(lb.day1.type).toBe('pending');
   });
 });
 
