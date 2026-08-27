@@ -11,10 +11,14 @@ import {
 } from './scoring.js';
 
 export async function computeMissedCutResult(users) {
+  const meta = await getJSON('tournament:meta');
+  // No-cut events have no missed-cut bet at all (the pick phase is skipped,
+  // so there normally won't be picks either — this is a belt-and-suspenders guard).
+  if (meta?.noCut) return { resolved: false, picks: {} };
+
   const picks = await getJSON('missedcut:picks');
   if (!picks || Object.keys(picks).length === 0) return { resolved: false, picks: {} };
 
-  const meta = await getJSON('tournament:meta');
   const par = meta?.par || 72;
   const cutLine = Number.isFinite(meta?.cutLine) ? meta.cutLine : 4;
 

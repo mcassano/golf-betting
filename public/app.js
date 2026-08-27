@@ -24,6 +24,9 @@ const ICONS = {
 
   // US Open Trophy – silver two-handled cup
   usopen: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="57" width="28" height="5" rx="2" fill="#334155"/><rect x="23" y="50" width="18" height="7" rx="1" fill="#475569"/><rect x="28" y="40" width="8" height="10" fill="#64748b"/><path d="M13 14 Q12 40 32 40 Q52 40 51 14 Z" fill="#e2e8f0"/><ellipse cx="32" cy="14" rx="19" ry="5" fill="#cbd5e1"/><path d="M13 19 Q3 21 3 30 Q3 39 13 37" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M51 19 Q61 21 61 30 Q61 39 51 37" stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="32" cy="14" rx="10" ry="2.5" fill="white" opacity="0.5"/><path d="M20 20 Q22 16 27 20" stroke="white" stroke-width="1.5" fill="none" opacity="0.6"/><path d="M26 28 v8 M32 26 v10 M38 28 v8" stroke="#94a3b8" stroke-width="1" opacity="0.5"/></svg>`,
+
+  // FedEx Cup – silver chalice cradling a giant dimpled golf ball (TOUR Championship)
+  fedex: `<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="57" width="28" height="5" rx="2" fill="#334155"/><rect x="24" y="51" width="16" height="6" rx="1" fill="#475569"/><rect x="29" y="42" width="6" height="9" fill="#94a3b8"/><path d="M20 34 Q20 44 32 44 Q44 44 44 34 L44 30 L20 30 Z" fill="#cbd5e1"/><path d="M20 32 Q14 32 14 38" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M44 32 Q50 32 50 38" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="32" cy="20" r="14" fill="#f8fafc"/><circle cx="32" cy="20" r="14" stroke="#cbd5e1" stroke-width="1"/><path d="M24 12 Q28 8 34 9" stroke="white" stroke-width="2" fill="none" opacity="0.9" stroke-linecap="round"/><g fill="#cbd5e1"><circle cx="27" cy="16" r="1.2"/><circle cx="33" cy="15" r="1.2"/><circle cx="39" cy="17" r="1.2"/><circle cx="24" cy="21" r="1.2"/><circle cx="30" cy="21" r="1.2"/><circle cx="36" cy="22" r="1.2"/><circle cx="42" cy="22" r="1.1"/><circle cx="27" cy="26" r="1.2"/><circle cx="33" cy="27" r="1.2"/><circle cx="39" cy="27" r="1.1"/></g><ellipse cx="32" cy="44" rx="6" ry="1.5" fill="#94a3b8" opacity="0.6"/></svg>`,
 };
 
 function getTournamentIcon(name) {
@@ -31,6 +34,7 @@ function getTournamentIcon(name) {
   if (n.includes('pga championship')) return ICONS.wanamaker;
   if (n.includes('u.s. open') || n.includes('us open') || n.includes('united states open')) return ICONS.usopen;
   if (n.includes('the open') || n.includes('open championship') || n.includes('british open')) return ICONS.claret;
+  if (n.includes('tour championship') || n.includes('fedex')) return ICONS.fedex;
   return ICONS.jacket; // Masters or default
 }
 
@@ -295,6 +299,14 @@ async function renderAdmin(container) {
       </div>
       ${status === 'setup' ? `
       <div class="mb-4">
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+          <input type="checkbox" ${tournament?.noCut ? 'checked' : ''} onchange="toggleNoCut(this.checked)" />
+          No cut this week (e.g. TOUR Championship)
+        </label>
+        <p class="text-xs text-gray-400 mt-1">Everyone plays four rounds: no cut line, no missed-cut side bet, and the missed-cut pick phase is skipped.</p>
+      </div>` : ''}
+      ${status === 'setup' ? `
+      <div class="mb-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">
           Player List <span class="text-gray-400 text-xs">(one name per line)</span>
         </label>
@@ -328,7 +340,8 @@ async function renderAdmin(container) {
     const draftedPlayers = players.filter((p) => draftedNames.has(p.name));
     const currentDay = { day1: 1, day2: 2, day3: 3, day4: 4, complete: 4 }[status] || 1;
     const par = tournament?.par || 72;
-    const cutLine = Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4;
+    // Infinity for no-cut events so didMissCut can never fire off the +4 default
+    const cutLine = tournament?.noCut ? Infinity : (Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4);
     const rows = draftedPlayers.map((p) => {
       const s = scores[p.name] || {};
       const missedCut = didMissCut(s, par, cutLine);
@@ -429,10 +442,10 @@ async function renderAdmin(container) {
   const nextStatus = { setup: null, drafting: null, wc_selection: null, day1: 'day2', day2: 'day3', day3: 'day4', day4: 'complete', complete: null };
   const nextLabels = { day2: 'Advance to Day 2', day3: 'Advance to Day 3', day4: 'Advance to Day 4', complete: 'Mark Tournament Complete' };
   if (status && nextStatus[status]) {
-    const advancingToDay3 = nextStatus[status] === 'day3';
+    const advancingToDay3 = nextStatus[status] === 'day3' && !tournament?.noCut;
     html += `
     <div class="card mb-4">
-      <div class="section-title">Tournament Status: <span class="text-green-700">${status}</span></div>
+      <div class="section-title">Tournament Status: <span class="text-green-700">${status}</span>${tournament?.noCut ? ' <span class="text-xs font-normal text-gray-400 ml-1">(no-cut event)</span>' : ''}</div>
       ${advancingToDay3 ? `
       <div class="mb-2">
         <label class="block text-sm font-medium text-gray-700 mb-1">Cut line (to par) — required</label>
@@ -510,6 +523,12 @@ window.savePlayers = async function() {
   navigate('admin');
 };
 
+window.toggleNoCut = async function(noCut) {
+  await api('POST', '/admin/tournament/nocut', { noCut });
+  state.tournament = await api('GET', '/tournament');
+  showToast(noCut ? 'No-cut event: cut line and missed-cut bet disabled' : 'Cut re-enabled', 'success');
+};
+
 window.toggleWC = async function(name, wcEligible) {
   await api('PATCH', `/admin/players/${encodeURIComponent(name)}/wc`, { wcEligible });
 };
@@ -564,7 +583,7 @@ window.scoreGridKeydown = function(e, input) {
 
 window.advanceTournament = async function(status) {
   const body = { status };
-  if (status === 'day3') {
+  if (status === 'day3' && !state.tournament?.noCut) {
     const raw = document.getElementById('cut-line-input')?.value;
     const cutLine = parseInt(raw, 10);
     if (!Number.isFinite(cutLine)) {
@@ -878,8 +897,15 @@ async function renderBets(container) {
     </div>
   </div>`;
 
-  // Missed Cut Side Bet
-  html += `
+  // Missed Cut Side Bet (not offered in no-cut events)
+  if (tournament?.noCut) {
+    html += `
+  <div class="card mb-4">
+    <div class="section-title">🎲 Missed Cut Side Bet</div>
+    <p class="text-sm text-gray-500">No cut this week — everyone plays four rounds, so there's no missed-cut bet.</p>
+  </div>`;
+  } else {
+    html += `
   <div class="card mb-4">
     <div class="section-title">🎲 Missed Cut Side Bet</div>
     <p class="text-sm text-gray-700 mb-2">Each player picked one golfer they think will miss the cut.</p>
@@ -889,13 +915,14 @@ async function renderBets(container) {
       ).join('')}
     </div>
   </div>`;
+  }
 
   // CUT / WD
   html += `
   <div class="card mb-4">
     <div class="section-title">CUT &amp; Withdrawal Scoring</div>
     <ul class="text-sm text-gray-700 space-y-1 list-disc list-inside">
-      <li><strong>Missed Cut (CUT):</strong> 99-stroke penalty per remaining day.</li>
+      ${tournament?.noCut ? '' : '<li><strong>Missed Cut (CUT):</strong> 99-stroke penalty per remaining day.</li>'}
       <li><strong>Withdrawal (WD):</strong> Excluded from scoring entirely. Days 1–2 adjust best-N down for all teams.</li>
     </ul>
   </div>`;
@@ -1092,7 +1119,8 @@ async function renderScoreboard(container) {
 
   // Bet winners summary
   const par = tournament?.par || 72;
-  const cutLine = Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4;
+  // Infinity for no-cut events so didMissCut can never fire off the +4 default
+  const cutLine = tournament?.noCut ? Infinity : (Number.isFinite(tournament?.cutLine) ? tournament.cutLine : 4);
   const relStr = (score, rounds) => {
     const diff = score - rounds * par;
     if (diff === 0) return 'E';

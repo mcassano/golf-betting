@@ -264,6 +264,16 @@ describe('computeMissedCutResult', () => {
     expect(result.resolved).toBe(false);
   });
 
+  it('never resolves for a no-cut event, even with picks and CUT stamps', async () => {
+    store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
+    store['tournament:meta'] = { status: 'day3', noCut: true };
+    setScore('Lowry', 2, 'CUT');
+
+    const result = await computeMissedCutResult(['Mike', 'Caleb', 'Marshall']);
+    expect(result.resolved).toBe(false);
+    expect(result.picks).toEqual({});
+  });
+
   it('returns unresolved when cut has not been made yet (pre-day3)', async () => {
     store['missedcut:picks'] = { Mike: 'Cantlay', Caleb: 'Lowry', Marshall: 'Thomas' };
     store['tournament:meta'] = { status: 'day2' };

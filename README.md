@@ -16,6 +16,10 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
    - **Wild Card (daily)**: On any day a wildcard golfer has the sole lowest round across all 21 selected golfers (drafted + WC), the WC owner collects $5 from each opponent. Ties between WC golfers split; any tie with a drafted golfer voids the payout.
    - **Missed Cut**: Each player picks one golfer they think will miss the cut. If your golfer misses the cut, you collect $5 from each loser. If multiple golfers miss, each winner collects from the remaining losers. If all miss or none miss, no payout. Picks are set via admin; the bet resolves automatically after the cut is made. The admin enters the **cut line** (to par) when advancing to Day 3 — a golfer missed the cut if they have an explicit CUT or their R1+R2 is worse than the line. The cut line defaults to +4 if not set.
 
+### No-cut events
+
+For events without a cut (e.g. the TOUR Championship), the admin can check **"No cut this week"** during tournament setup (`POST /api/admin/tournament/nocut`). This disables the missed-cut side bet, skips the missed-cut pick phase (Wild Card picks advance straight to Day 1), removes the cut-line requirement when advancing to Day 3, and stops the ESPN sync from ever stamping CUT on a golfer.
+
 ## Withdrawals (WD)
 
 Admin can mark a golfer as WD from a given day forward via the score table. WD differs from CUT: CUT golfers take a 99-stroke penalty for remaining days, while WDs trigger the days-1&2 leveling adjustment above.

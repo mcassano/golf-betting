@@ -114,9 +114,10 @@ export async function syncScores(io, date) {
   // stamping golfers whose round 2 is still in progress, and golfers ESPN simply
   // hasn't posted a day3 score for yet (who otherwise made the cut). The same
   // R1+R2 check also self-heals any earlier spurious CUT.
+  // No-cut events (meta.noCut) never stamp CUT — everyone plays four rounds.
   const currentDayN = { day3: 3, day4: 4, complete: 4 }[meta?.status];
   const fieldInRound3 = espnPlayers.filter((ep) => ep.scores.day3 !== null).length >= 5;
-  if (currentDayN >= 3 && fieldInRound3) {
+  if (currentDayN >= 3 && fieldInRound3 && !meta?.noCut) {
     const par = meta?.par || 72;
     const cutLine = Number.isFinite(meta?.cutLine) ? meta.cutLine : DEFAULT_CUT_LINE;
     const batchKeys = [];

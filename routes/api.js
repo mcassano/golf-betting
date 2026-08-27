@@ -107,11 +107,25 @@ router.post('/admin/tournament', requireUser, async (req, res) => {
   const { name, par } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const parN = parseInt(par, 10);
+  // Preserve noCut if the tournament is being renamed rather than created fresh
+  const existing = await getJSON('tournament:meta');
   await setJSON('tournament:meta', {
     name,
     status: 'setup',
     par: Number.isFinite(parN) && parN > 0 ? parN : 72,
+    noCut: !!existing?.noCut,
   });
+  res.json({ ok: true });
+});
+
+// No-cut events (e.g. TOUR Championship): no cut line, no missed-cut bet,
+// and the mc_pick phase is skipped after Wild Card selection.
+router.post('/admin/tournament/nocut', requireUser, async (req, res) => {
+  const meta = await getJSON('tournament:meta');
+  if (!meta) return res.status(400).json({ error: 'No tournament' });
+  meta.noCut = !!req.body?.noCut;
+  await setJSON('tournament:meta', meta);
+  emit('tournament:nocut', { noCut: meta.noCut });
   res.json({ ok: true });
 });
 
@@ -142,7 +156,8 @@ router.post('/admin/tournament/advance', requireUser, async (req, res) => {
   if (!meta) return res.status(400).json({ error: 'No tournament' });
   // The cut is set after round 2, so the to-par cut line is required when
   // advancing into day3. Scores at or below the line made the cut.
-  if (status === 'day3') {
+  // No-cut events skip this entirely.
+  if (status === 'day3' && !meta.noCut) {
     const cl = parseInt(cutLine, 10);
     if (!Number.isFinite(cl)) return res.status(400).json({ error: 'cutLine (to par) required to advance to Day 3' });
     meta.cutLine = cl;
@@ -340,13 +355,14 @@ router.post('/wc/pick', requireUser, requireStatus('wc_selection'), async (req, 
       await set(`wc:${player}`, golfer);
       emit('wc:picked', { player, golfer });
 
-      // Check if all users have WC picks — advance to mc_pick
+      // Check if all users have WC picks — advance to mc_pick, or straight to
+      // day1 for no-cut events (there's no missed-cut bet to pick for).
       const allPicked = await Promise.all(users.map((u) => get(`wc:${u}`)));
       if (allPicked.every((w) => w !== null)) {
         const meta = req.tournamentMeta;
-        meta.status = 'mc_pick';
+        meta.status = meta.noCut ? 'day1' : 'mc_pick';
         await setJSON('tournament:meta', meta);
-        emit('tournament:advanced', { status: 'mc_pick' });
+        emit('tournament:advanced', { status: meta.status });
       }
     });
     res.json({ ok: true });
