@@ -1,16 +1,35 @@
-const ESPN_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
+// ESPN's edge (Akamai) 403s requests from datacenter IPs (e.g. Railway) when the
+// User-Agent looks like a bare HTTP client — Node's default UA is blocked while a
+// curl-style UA passes. site.web.api.espn.com serves the identical payload behind
+// a laxer edge config, so it's the fallback if the primary host starts blocking.
+const ESPN_SCOREBOARD_URLS = [
+  'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard',
+  'https://site.web.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard',
+];
+const ESPN_UA = process.env.ESPN_UA || 'curl/8.7.1';
 
 /**
- * Fetch raw scoreboard data from ESPN.
+ * Fetch raw scoreboard data from ESPN, trying each host until one succeeds.
  * Optionally pass a date string (YYYYMMDD) to get a specific day.
  */
 async function fetchScoreboard(date) {
-  const url = date ? `${ESPN_SCOREBOARD_URL}?dates=${date}` : ESPN_SCOREBOARD_URL;
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) {
-    throw new Error(`ESPN API returned ${res.status}: ${res.statusText}`);
+  let lastErr;
+  for (const base of ESPN_SCOREBOARD_URLS) {
+    const url = date ? `${base}?dates=${date}` : base;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': ESPN_UA },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) return res.json();
+      lastErr = new Error(`ESPN API returned ${res.status}: ${res.statusText}`);
+      console.warn(`[ESPN] ${res.status} from ${base}, trying next host`);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[ESPN] fetch failed for ${base}: ${e.message}`);
+    }
   }
-  return res.json();
+  throw lastErr;
 }
 
 /**
