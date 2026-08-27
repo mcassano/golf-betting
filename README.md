@@ -18,7 +18,7 @@ A real-time golf tournament betting app for a small group of friends. Run a snak
 
 ### No-cut events
 
-For events without a cut (e.g. the TOUR Championship), the admin can check **"No cut this week"** during tournament setup (`POST /api/admin/tournament/nocut`). This disables the missed-cut side bet, skips the missed-cut pick phase (Wild Card picks advance straight to Day 1), removes the cut-line requirement when advancing to Day 3, and stops the ESPN sync from ever stamping CUT on a golfer.
+For events without a cut (e.g. the TOUR Championship), the admin can check **"No cut this week"** during setup, drafting, or Wild Card selection (`POST /api/admin/tournament/nocut`); after that the admin panel's Cut card shows the setting read-only. This disables the missed-cut side bet, skips the missed-cut pick phase (Wild Card picks advance straight to Day 1), removes the cut-line requirement when advancing to Day 3, and stops the ESPN sync from ever stamping CUT on a golfer.
 
 ## Withdrawals (WD)
 

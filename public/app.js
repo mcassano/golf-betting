@@ -438,6 +438,26 @@ async function renderAdmin(container) {
     </div>`;
   }
 
+  // ── Cut setting (visible at every stage; editable until picks lock in at day1)
+  if (status && status !== 'setup') {
+    const editable = ['drafting', 'wc_selection'].includes(status);
+    const cutLineStr = Number.isFinite(tournament?.cutLine)
+      ? ` — cut line ${tournament.cutLine >= 0 ? '+' : ''}${tournament.cutLine}` : '';
+    html += `
+    <div class="card mb-4">
+      <div class="section-title">Cut</div>
+      ${editable ? `
+      <label class="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+        <input type="checkbox" ${tournament?.noCut ? 'checked' : ''} onchange="toggleNoCut(this.checked)" />
+        No cut this week (e.g. TOUR Championship)
+      </label>
+      <p class="text-xs text-gray-400 mt-1">Everyone plays four rounds: no cut line, no missed-cut side bet, and the missed-cut pick phase is skipped.</p>` : `
+      <p class="text-sm text-gray-700">${tournament?.noCut
+        ? '🚫 No cut this week — missed-cut bet disabled, no cut line needed.'
+        : `✂️ Normal cut event — missed-cut bet on${cutLineStr}.`}</p>`}
+    </div>`;
+  }
+
   // ── Advance tournament status
   const nextStatus = { setup: null, drafting: null, wc_selection: null, day1: 'day2', day2: 'day3', day3: 'day4', day4: 'complete', complete: null };
   const nextLabels = { day2: 'Advance to Day 2', day3: 'Advance to Day 3', day4: 'Advance to Day 4', complete: 'Mark Tournament Complete' };
@@ -527,6 +547,7 @@ window.toggleNoCut = async function(noCut) {
   await api('POST', '/admin/tournament/nocut', { noCut });
   state.tournament = await api('GET', '/tournament');
   showToast(noCut ? 'No-cut event: cut line and missed-cut bet disabled' : 'Cut re-enabled', 'success');
+  if (state.view === 'admin') navigate('admin');
 };
 
 window.toggleWC = async function(name, wcEligible) {
