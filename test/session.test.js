@@ -64,6 +64,7 @@ async function callRoute(method, path, body = {}, cookies = {}) {
 beforeEach(() => {
   clearStore();
   store.users = ['Mike', 'Caleb', 'Marshall'];
+  process.env.GOLF_PIN = '1289';
 });
 
 const savedEnv = process.env.GOLF_PIN;
@@ -93,7 +94,7 @@ describe('POST /session', () => {
     expect(res._json.error).toMatch(/pin/i);
   });
 
-  it('accepts correct default PIN', async () => {
+  it('accepts correct PIN', async () => {
     const res = await callRoute('post', '/session', { name: 'Mike', pin: '1289' });
     expect(res.statusCode).toBe(200);
     expect(res._json.name).toBe('Mike');

@@ -16,7 +16,10 @@ const io = new Server(httpServer);
 setIo(io);
 
 app.use(express.json());
-app.use(cookieParser(process.env.COOKIE_SECRET || 'golf-dev-secret-change-me'));
+if (!process.env.COOKIE_SECRET) {
+  throw new Error('COOKIE_SECRET environment variable is required');
+}
+app.use(cookieParser(process.env.COOKIE_SECRET));
 app.use(express.static(join(__dirname, 'public')));
 app.use('/api', apiRouter);
 

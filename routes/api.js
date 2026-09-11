@@ -52,7 +52,7 @@ router.post('/session', async (req, res) => {
 
   // Patron — view-only role with its own PIN
   if (name === 'Patron') {
-    const patronPin = process.env.PATRON_PIN || '8912';
+    const patronPin = process.env.PATRON_PIN;
     if (!pin || pin !== patronPin) {
       await new Promise((r) => setTimeout(r, 2000));
       return res.status(401).json({ error: 'Invalid PIN' });
@@ -70,7 +70,7 @@ router.post('/session', async (req, res) => {
   if (!users || !users.includes(name)) {
     return res.status(400).json({ error: 'Unknown user' });
   }
-  const correctPin = process.env.GOLF_PIN || '1289';
+  const correctPin = process.env.GOLF_PIN;
   if (!pin || pin !== correctPin) {
     await new Promise((r) => setTimeout(r, 2000));
     return res.status(401).json({ error: 'Invalid PIN' });
@@ -654,7 +654,7 @@ router.post('/missedcut/pick', requireUser, requireStatus('mc_pick'), async (req
 // ── Reader API ───────────────────────────────────────────────────────────────
 
 function requireReaderPin(req, res, next) {
-  if (req.query.pin !== (process.env.READER_PIN || '1829')) {
+  if (!process.env.READER_PIN || req.query.pin !== process.env.READER_PIN) {
     return res.status(401).json({ error: 'Invalid pin' });
   }
   next();
